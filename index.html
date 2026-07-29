@@ -134,6 +134,7 @@ const GROUPS = [
     ['sliceZoom',  'stretch',     0.0,  1.0,  0.01, 0.2],
     ['sliceSkew',  'skew',        0.0,  1.0,  0.01, 0.15],
     ['slicePersp', 'perspective', 0.0,  1.0,  0.01, 0.25],
+    ['sliceRandom','randomness',  0.0,  1.0,  0.01, 0.0],
     ['sliceSeed',  'seed',        0,  100,    1,    7],
     ['stripShade', 'edge shade',  0.0,  1.0,  0.01, 0.65],
     ['shadeWidth', 'shade width', 0.0,  1.0,  0.01, 0.5],
@@ -162,8 +163,8 @@ const COLORS = [
 
 const PRESETS = {
   aura:   { sliceMix: 0.0, chromAb: 0.0, soft: 0.09, pulseAmt: 0.05 },
-  sliced: { sliceMix: 1.0, sliceCount: 16, sliceOffX: 0.08, sliceOffY: 0.04,
-            sliceZoom: 0.2, sliceSkew: 0.3, slicePersp: 0.45,
+  sliced: { sliceMix: 1.0, sliceCount: 16, sliceOffX: 0.2, sliceOffY: 0.05,
+            sliceZoom: 0.3, sliceSkew: 0.25, slicePersp: 0.4, sliceRandom: 0.08,
             stripShade: 0.5, shadeWidth: 0.3, chromAb: 0.002,
             drift: 0.25, soft: 0.09 },
 };
@@ -189,7 +190,7 @@ uniform float u_spread, u_bandOff, u_spaceExp, u_soft, u_glowStr, u_glowFall;
 uniform float u_pulseSpeed, u_pulseAmt, u_pulseShape, u_beatSharp, u_spin, u_hueCycle;
 uniform float u_sliceMix, u_sliceCount, u_sliceOffX, u_sliceOffY, u_sliceZoom;
 uniform float u_sliceSeed, u_stripShade, u_shadeWidth, u_drift;
-uniform float u_sliceSkew, u_slicePersp;
+uniform float u_sliceSkew, u_slicePersp, u_sliceRandom;
 uniform float u_chromAb, u_grain, u_vig, u_bright, u_contrast, u_sat;
 uniform float u_imageMix, u_imgAspect;
 uniform sampler2D u_image;
@@ -311,13 +312,34 @@ vec3 render(vec2 uv, vec2 suv){
     float dr = sin(u_time * u_drift * 2.0 + idx * 1.71);
     float dc2 = cos(u_time * u_drift * 1.6 + idx * 2.39);
 
-    // stretch x about the strip centre, then shift
     float cxs = ((idx + 0.5) / n) * 2.0 - 1.0; // strip centre in suv space
     float aspect = u_res.x / u_res.y;
     float cx = cxs * aspect;                    // strip centre in aspect space
-    float stretch = 1.0 + h3 * 2.0 * u_sliceZoom;
-    float ox = ((h1 - 0.5) * 2.0 + 0.4 * dr)  * u_sliceOffX;
-    float oy = ((h2 - 0.5) * 2.0 + 0.4 * dc2) * u_sliceOffY;
+    float sd = cxs;                             // signed distance from screen centre
+    float alt = mod(idx, 2.0) * 2.0 - 1.0;      // alternating fold direction
+    float r = clamp(u_sliceRandom, 0.0, 1.0);
+
+    // random pattern
+    float oxR = (h1 - 0.5) * 2.0 * u_sliceOffX;
+    float oyR = (h2 - 0.5) * 2.0 * u_sliceOffY;
+    float stR = 1.0 + h3 * 2.0 * u_sliceZoom;
+    float skR = (h4 - 0.5) * 2.0 * u_sliceSkew;
+    float tiR = (h5 - 0.5) * 2.0 * u_slicePersp;
+
+    // centre-out pattern: distortion grows from the middle outward.
+    // oxC partially re-centres each strip's sampling, so central strips
+    // repeat the notch and the whole heart fans out like the reference.
+    float oxC = -sd * aspect * u_sliceOffX * 2.5;
+    float oyC = alt * u_sliceOffY * abs(sd);
+    float stC = 1.0 + u_sliceZoom * 1.5 * abs(sd);             // outer strips smear wider
+    float skC = sd * u_sliceSkew * 1.5;                        // shear flips at centre
+    float tiC = alt * u_slicePersp * (0.25 + 0.75 * abs(sd));  // accordion fold
+
+    float ox = mix(oxC, oxR, r) + 0.4 * dr  * u_sliceOffX * u_drift;
+    float oy = mix(oyC, oyR, r) + 0.4 * dc2 * u_sliceOffY * u_drift;
+    float stretch = max(mix(stC, stR, r), 0.1);
+    float skew = mix(skC, skR, r);
+    float tilt = mix(tiC, tiR, r);
 
     vec2 guv = uv;
     guv.x = cx + (uv.x - cx) / stretch + ox;
@@ -325,8 +347,6 @@ vec3 render(vec2 uv, vec2 suv){
 
     // folded-panel look: shear + fake perspective across each strip
     float lc = local - 0.5;
-    float skew = (h4 - 0.5) * 2.0 * u_sliceSkew;
-    float tilt = (h5 - 0.5) * 2.0 * u_slicePersp;
     guv.y += lc * skew * 0.7;
     guv.y *= 1.0 + lc * tilt * 0.8;
     wuv = mix(uv, guv, u_sliceMix);
@@ -499,7 +519,7 @@ document.getElementById('randomize').onclick = () => {
   applyValues({
     sliceMix: r(0.5, 1), sliceCount: Math.round(r(5, 40)), sliceSeed: Math.round(r(0, 100)),
     sliceOffX: r(0.02, 0.3), sliceOffY: r(0, 0.15), sliceZoom: r(0.1, 0.8),
-    sliceSkew: r(0, 0.6), slicePersp: r(0, 0.7),
+    sliceSkew: r(0, 0.6), slicePersp: r(0, 0.7), sliceRandom: r(0, 1),
     stripShade: r(0.3, 0.9), drift: r(0, 1),
     rot: Math.round(r(-25, 25)), spaceExp: r(0.7, 1.6), soft: r(0.06, 0.25),
   });
@@ -577,14 +597,15 @@ window.addEventListener('dragover', e => e.preventDefault());
 window.addEventListener('drop', e => { e.preventDefault(); loadImageFile(e.dataTransfer.files[0]); });
 
 // freeze the current procedural heart into a still image, then slice that
-document.getElementById('bakeImg').onclick = () => {
+function bakeHeart(){
   drawScene({ sliceMix: 0, imageMix: 0, chromAb: 0 });
   ensureTex();
   gl.copyTexImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 0, 0, canvas.width, canvas.height, 0);
   hasImage = true;
   imgAspect = canvas.width / canvas.height;
   setParam('imageMix', 1);
-};
+}
+document.getElementById('bakeImg').onclick = bakeHeart;
 
 document.getElementById('clearImg').onclick = () => { hasImage = false; };
 
@@ -608,6 +629,9 @@ function frame(){
   drawScene();
   requestAnimationFrame(frame);
 }
+// image mode is the default: bake the heart into a still on startup,
+// so the effect runs over an image (drop in your own to replace it)
+bakeHeart();
 requestAnimationFrame(frame);
 </script>
 </body>

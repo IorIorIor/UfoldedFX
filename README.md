@@ -22,11 +22,15 @@ npx serve .
   picker for every ring, the glow, and the background.
 - **Animation**: pulse speed/depth, sine-to-heartbeat shape, beat punch, spin, hue cycle.
 - **Glitch Slices**: slice mix, count, x/y shift, stretch, skew, perspective (folded-panel
-  tilt with directional shading), seed, edge shading, drift.
-- **Image Source**: run the slice effect over an image instead of the procedural heart —
-  `Load Image` (or drag & drop a file onto the page), or `Bake Heart` to freeze the
-  current procedural render into a still and slice that. `image mix` cross-fades between
-  procedural and image.
+  tilt with directional shading), randomness, seed, edge shading, drift. By default the
+  slice pattern expands symmetrically from the centre of the screen (shift, stretch,
+  skew and fold all grow outward, and central strips repeat the heart's notch);
+  the `randomness` slider blends toward a fully random per-strip pattern driven by `seed`.
+- **Image Source**: the slice effect runs over an image by default — on startup the
+  procedural heart is baked into a still automatically. `Load Image` (or drag & drop a
+  file onto the page) replaces it with your own picture, `Bake Heart` re-freezes the
+  current procedural render, and `Clear` returns to the live procedural heart.
+  `image mix` cross-fades between procedural and image.
 - **Post FX**: chromatic aberration, grain, vignette, brightness, contrast, saturation.
 
 `Save PNG` exports the current frame.
