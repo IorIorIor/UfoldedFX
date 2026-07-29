@@ -132,6 +132,8 @@ const GROUPS = [
     ['sliceOffX',  'shift x',     0.0,  0.6,  0.005, 0.08],
     ['sliceOffY',  'shift y',     0.0,  0.6,  0.005, 0.04],
     ['sliceZoom',  'stretch',     0.0,  1.0,  0.01, 0.2],
+    ['sliceSkew',  'skew',        0.0,  1.0,  0.01, 0.15],
+    ['slicePersp', 'perspective', 0.0,  1.0,  0.01, 0.25],
     ['sliceSeed',  'seed',        0,  100,    1,    7],
     ['stripShade', 'edge shade',  0.0,  1.0,  0.01, 0.65],
     ['shadeWidth', 'shade width', 0.0,  1.0,  0.01, 0.5],
@@ -161,7 +163,8 @@ const COLORS = [
 const PRESETS = {
   aura:   { sliceMix: 0.0, chromAb: 0.0, soft: 0.09, pulseAmt: 0.05 },
   sliced: { sliceMix: 1.0, sliceCount: 16, sliceOffX: 0.08, sliceOffY: 0.04,
-            sliceZoom: 0.2, stripShade: 0.5, shadeWidth: 0.3, chromAb: 0.002,
+            sliceZoom: 0.2, sliceSkew: 0.3, slicePersp: 0.45,
+            stripShade: 0.5, shadeWidth: 0.3, chromAb: 0.002,
             drift: 0.25, soft: 0.09 },
 };
 
@@ -186,7 +189,10 @@ uniform float u_spread, u_bandOff, u_spaceExp, u_soft, u_glowStr, u_glowFall;
 uniform float u_pulseSpeed, u_pulseAmt, u_pulseShape, u_beatSharp, u_spin, u_hueCycle;
 uniform float u_sliceMix, u_sliceCount, u_sliceOffX, u_sliceOffY, u_sliceZoom;
 uniform float u_sliceSeed, u_stripShade, u_shadeWidth, u_drift;
+uniform float u_sliceSkew, u_slicePersp;
 uniform float u_chromAb, u_grain, u_vig, u_bright, u_contrast, u_sat;
+uniform float u_imageMix, u_imgAspect;
+uniform sampler2D u_image;
 uniform vec3  u_colCore, u_colBlue, u_colRed, u_colPeach, u_colLav, u_colGlow, u_colBg;
 
 float dot2(vec2 v){ return dot(v, v); }
@@ -272,6 +278,20 @@ vec3 heartColor(vec2 uv){
   return c;
 }
 
+// procedural heart, optionally cross-faded with the loaded/baked image (cover fit)
+vec3 sceneColor(vec2 wuv){
+  vec3 c = heartColor(wuv);
+  if (u_imageMix > 0.001){
+    float ca = u_res.x / u_res.y;
+    vec2 t = vec2(wuv.x / ca, wuv.y) * 0.5;
+    if (u_imgAspect > ca) t.x *= ca / u_imgAspect;
+    else                  t.y *= u_imgAspect / ca;
+    vec3 ic = texture2D(u_image, clamp(t + 0.5, 0.0, 1.0)).rgb;
+    c = mix(c, ic, u_imageMix);
+  }
+  return c;
+}
+
 // vertical-strip glitch warp; also outputs per-strip edge shading
 vec3 render(vec2 uv, vec2 suv){
   float shade = 1.0;
@@ -285,6 +305,8 @@ vec3 render(vec2 uv, vec2 suv){
     float h1 = hash(idx * 7.31 + u_sliceSeed * 1.13 + 3.7);
     float h2 = hash(idx * 3.77 + u_sliceSeed * 2.71 + 11.0);
     float h3 = hash(idx * 9.13 + u_sliceSeed * 0.93 + 27.0);
+    float h4 = hash(idx * 5.21 + u_sliceSeed * 1.31 + 41.0);
+    float h5 = hash(idx * 6.53 + u_sliceSeed * 0.57 + 53.0);
 
     float dr = sin(u_time * u_drift * 2.0 + idx * 1.71);
     float dc2 = cos(u_time * u_drift * 1.6 + idx * 2.39);
@@ -300,14 +322,22 @@ vec3 render(vec2 uv, vec2 suv){
     vec2 guv = uv;
     guv.x = cx + (uv.x - cx) / stretch + ox;
     guv.y = uv.y + oy;
+
+    // folded-panel look: shear + fake perspective across each strip
+    float lc = local - 0.5;
+    float skew = (h4 - 0.5) * 2.0 * u_sliceSkew;
+    float tilt = (h5 - 0.5) * 2.0 * u_slicePersp;
+    guv.y += lc * skew * 0.7;
+    guv.y *= 1.0 + lc * tilt * 0.8;
     wuv = mix(uv, guv, u_sliceMix);
 
     float e = min(local, 1.0 - local) * 2.0;    // 0 at edges, 1 at centre
     float g = mix(10.0, 1.2, clamp(u_shadeWidth, 0.0, 1.0));
     float sh = 1.0 - u_stripShade * pow(1.0 - e, g);
+    sh *= 1.0 - 0.55 * clamp(tilt * lc * 2.0, 0.0, 1.0); // side tilted away goes dark
     shade = mix(1.0, sh, u_sliceMix);
   }
-  return heartColor(wuv) * shade;
+  return sceneColor(wuv) * shade;
 }
 
 void main(){
@@ -411,6 +441,30 @@ for (const [title, items] of GROUPS){
   groupsEl.appendChild(det);
 }
 
+// image source: slice the shader over a loaded photo or a baked heart frame
+{
+  const det = document.createElement('details');
+  det.open = true;
+  det.innerHTML = `<summary>Image Source</summary>
+    <div class="btnrow">
+      <button id="loadImg">Load Image</button>
+      <button id="bakeImg">Bake Heart</button>
+      <button id="clearImg">Clear</button>
+    </div>
+    <input type="file" id="imgFile" accept="image/*" style="display:none">`;
+  state.imageMix = 1.0;
+  defaults.imageMix = 1.0;
+  const row = document.createElement('div');
+  row.className = 'ctl';
+  row.innerHTML = `<label>image mix</label><input type="range" min="0" max="1" step="0.01" value="1"><span class="val">1.00</span>`;
+  const input = row.querySelector('input');
+  const val = row.querySelector('.val');
+  input.addEventListener('input', () => { state.imageMix = +input.value; val.textContent = (+input.value).toFixed(2); });
+  inputs.imageMix = { input, show: v => { val.textContent = (+v).toFixed(2); } };
+  det.appendChild(row);
+  groupsEl.appendChild(det);
+}
+
 {
   const det = document.createElement('details');
   det.open = true;
@@ -445,6 +499,7 @@ document.getElementById('randomize').onclick = () => {
   applyValues({
     sliceMix: r(0.5, 1), sliceCount: Math.round(r(5, 40)), sliceSeed: Math.round(r(0, 100)),
     sliceOffX: r(0.02, 0.3), sliceOffY: r(0, 0.15), sliceZoom: r(0.1, 0.8),
+    sliceSkew: r(0, 0.6), slicePersp: r(0, 0.7),
     stripShade: r(0.3, 0.9), drift: r(0, 1),
     rot: Math.round(r(-25, 25)), spaceExp: r(0.7, 1.6), soft: r(0.06, 0.25),
   });
@@ -484,17 +539,73 @@ function resize(){
 window.addEventListener('resize', resize);
 resize();
 
-function frame(){
+// ---------------------------------------------------------------- image source
+let tex = null, hasImage = false, imgAspect = 1;
+gl.uniform1i(u('u_image'), 0);
+
+function ensureTex(){
+  if (!tex) tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+}
+
+function useLoadedImage(img, w, h){
+  ensureTex();
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  hasImage = true;
+  imgAspect = w / h;
+  setParam('imageMix', 1);
+}
+
+function loadImageFile(file){
+  if (!file || !file.type.startsWith('image/')) return;
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => { useLoadedImage(img, img.naturalWidth, img.naturalHeight); URL.revokeObjectURL(url); };
+  img.src = url;
+}
+
+const imgFile = document.getElementById('imgFile');
+document.getElementById('loadImg').onclick = () => imgFile.click();
+imgFile.addEventListener('change', () => loadImageFile(imgFile.files[0]));
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', e => { e.preventDefault(); loadImageFile(e.dataTransfer.files[0]); });
+
+// freeze the current procedural heart into a still image, then slice that
+document.getElementById('bakeImg').onclick = () => {
+  drawScene({ sliceMix: 0, imageMix: 0, chromAb: 0 });
+  ensureTex();
+  gl.copyTexImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 0, 0, canvas.width, canvas.height, 0);
+  hasImage = true;
+  imgAspect = canvas.width / canvas.height;
+  setParam('imageMix', 1);
+};
+
+document.getElementById('clearImg').onclick = () => { hasImage = false; };
+
+// ---------------------------------------------------------------- draw
+function drawScene(overrides){
   resize();
   const t = (paused ? timeAcc : timeAcc + (performance.now() - t0) / 1000) % 3600;
   gl.uniform2f(u('u_res'), canvas.width, canvas.height);
   gl.uniform1f(u('u_time'), t);
+  gl.uniform1f(u('u_imgAspect'), imgAspect);
   for (const k in state){
-    const v = state[k];
+    let v = (overrides && k in overrides) ? overrides[k] : state[k];
+    if (k === 'imageMix' && !hasImage) v = 0;
     if (typeof v === 'number') gl.uniform1f(u('u_' + k), v);
     else gl.uniform3fv(u('u_' + k), hexToRgb(v));
   }
   gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+function frame(){
+  drawScene();
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

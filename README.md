@@ -21,7 +21,12 @@ npx serve .
 - **Color Bands**: band spread/shift/curve, blur, glow amount and reach, plus a color
   picker for every ring, the glow, and the background.
 - **Animation**: pulse speed/depth, sine-to-heartbeat shape, beat punch, spin, hue cycle.
-- **Glitch Slices**: slice mix, count, x/y shift, stretch, seed, edge shading, drift.
+- **Glitch Slices**: slice mix, count, x/y shift, stretch, skew, perspective (folded-panel
+  tilt with directional shading), seed, edge shading, drift.
+- **Image Source**: run the slice effect over an image instead of the procedural heart —
+  `Load Image` (or drag & drop a file onto the page), or `Bake Heart` to freeze the
+  current procedural render into a still and slice that. `image mix` cross-fades between
+  procedural and image.
 - **Post FX**: chromatic aberration, grain, vignette, brightness, contrast, saturation.
 
 `Save PNG` exports the current frame.
