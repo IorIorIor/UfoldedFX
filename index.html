@@ -573,6 +573,7 @@ function ensureTex(){
 }
 
 function useLoadedImage(img, w, h){
+  if (!w || !h) return;
   ensureTex();
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
@@ -599,11 +600,13 @@ window.addEventListener('drop', e => { e.preventDefault(); loadImageFile(e.dataT
 // freeze the current procedural heart into a still image, then slice that
 function bakeHeart(){
   drawScene({ sliceMix: 0, imageMix: 0, chromAb: 0 });
+  if (!canvas.width || !canvas.height) return false; // layout not ready yet
   ensureTex();
   gl.copyTexImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 0, 0, canvas.width, canvas.height, 0);
   hasImage = true;
   imgAspect = canvas.width / canvas.height;
   setParam('imageMix', 1);
+  return true;
 }
 document.getElementById('bakeImg').onclick = bakeHeart;
 
@@ -625,13 +628,15 @@ function drawScene(overrides){
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 
+// image mode is the default: bake the heart into a still on the first
+// laid-out frame, so the effect runs over an image (drop in your own to
+// replace it). Baking is deferred to rAF so the canvas has a real size.
+let needBake = true;
 function frame(){
+  if (needBake && bakeHeart()) needBake = false;
   drawScene();
   requestAnimationFrame(frame);
 }
-// image mode is the default: bake the heart into a still on startup,
-// so the effect runs over an image (drop in your own to replace it)
-bakeHeart();
 requestAnimationFrame(frame);
 </script>
 </body>
