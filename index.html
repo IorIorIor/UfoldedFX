@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UfoldedFX — Aura Heart</title>
+<style>
+  :root {
+    --panel-bg: rgba(16, 10, 26, 0.88);
+    --panel-border: rgba(255, 255, 255, 0.08);
+    --accent: #ff4d6d;
+    --text: #e8e2f2;
+    --text-dim: #9a8fb0;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: #14081f; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; overscroll-behavior: none; touch-action: manipulation; -webkit-user-select: none; user-select: none; }
+  #glcanvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+  #panel {
+    position: fixed; top: 12px; right: 12px; bottom: 12px;
+    width: 300px; overflow-y: auto;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 12px;
+    padding: 14px;
+    color: var(--text);
+    backdrop-filter: blur(8px);
+    scrollbar-width: thin;
+    transition: transform 0.25s ease;
+  }
+  #panel.hidden { transform: translateX(330px); }
+  #panel h1 { font-size: 14px; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 4px; color: var(--accent); }
+  #panel .sub { font-size: 10px; color: var(--text-dim); margin-bottom: 12px; }
+
+  details { margin-bottom: 8px; border: 1px solid var(--panel-border); border-radius: 8px; padding: 6px 8px; }
+  details summary { cursor: pointer; font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text); padding: 4px 0; user-select: none; }
+  details summary:hover { color: var(--accent); }
+
+  .ctl { display: grid; grid-template-columns: 96px 1fr 44px; align-items: center; gap: 6px; margin: 7px 0; }
+  .ctl label { font-size: 10px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ctl .val { font-size: 10px; color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; height: 18px; -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer; }
+  input[type=range]::-webkit-slider-runnable-track { height: 3px; background: rgba(255,255,255,0.18); border-radius: 2px; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); margin-top: -4.5px; border: none; }
+  input[type=range]::-moz-range-track { height: 3px; background: rgba(255,255,255,0.18); border-radius: 2px; }
+  input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); border: none; }
+  input[type=color] { width: 100%; height: 22px; border: none; background: none; padding: 0; cursor: pointer; }
+
+  .btnrow { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
+  button {
+    flex: 1 1 auto; font-family: inherit; font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+    background: rgba(255,255,255,0.07); color: var(--text); border: 1px solid var(--panel-border);
+    border-radius: 6px; padding: 7px 8px; cursor: pointer;
+  }
+  button:hover { background: rgba(255, 77, 109, 0.25); border-color: var(--accent); }
+
+  #toggleUI {
+    position: fixed; top: 12px; right: 324px; z-index: 10;
+    width: 34px; height: 34px; flex: none;
+    background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 8px;
+    color: var(--text); font-size: 14px; display: flex; align-items: center; justify-content: center;
+    transition: right 0.25s ease;
+  }
+  #toggleUI.solo { right: 12px; }
+  #err { position: fixed; left: 12px; bottom: 12px; color: #ff8080; font-size: 11px; white-space: pre-wrap; max-width: 60vw; }
+
+  /* phone / Android WebView layout: panel becomes a bottom sheet */
+  @media (max-width: 640px) {
+    #panel { top: auto; left: 12px; right: 12px; bottom: 12px; width: auto; max-height: 55%; }
+    #panel.hidden { transform: translateY(120%); }
+    #toggleUI { top: 12px; right: 12px; }
+    input[type=range] { height: 28px; }
+    input[type=range]::-webkit-slider-thumb { width: 16px; height: 16px; margin-top: -6.5px; }
+    input[type=range]::-moz-range-thumb { width: 16px; height: 16px; }
+  }
+</style>
+</head>
+<body>
+<canvas id="glcanvas"></canvas>
+<button id="toggleUI" title="Toggle controls">☰</button>
+<div id="panel">
+  <h1>Aura Heart FX</h1>
+  <div class="sub">webgl shader playground — fiddle away</div>
+  <div class="btnrow">
+    <button id="presetAura">Aura</button>
+    <button id="presetSliced">Sliced</button>
+    <button id="randomize">Random</button>
+    <button id="reset">Reset</button>
+  </div>
+  <div class="btnrow">
+    <button id="pause">Pause</button>
+    <button id="savepng">Save PNG</button>
+  </div>
+  <div id="groups"></div>
+</div>
+<div id="err"></div>
+
+<script>
+'use strict';
+
+// ---------------------------------------------------------------- parameters
+// [key, label, min, max, step, default]
+const GROUPS = [
+  ['Heart Shape', [
+    ['scale',      'size',        0.2,  2.5,  0.01, 0.78],
+    ['posX',       'center x',   -1.0,  1.0,  0.01, 0.0],
+    ['posY',       'center y',   -1.0,  1.0,  0.01, 0.0],
+    ['stretchX',   'width',       0.4,  2.0,  0.01, 1.08],
+    ['stretchY',   'height',      0.4,  2.0,  0.01, 1.0],
+    ['rot',        'rotation°', -180,  180,   1,    0],
+    ['round',      'roundness',   0.0,  1.0,  0.01, 0.10],
+  ]],
+  ['Color Bands', [
+    ['spread',     'band spread', 0.3,  2.5,  0.01, 1.0],
+    ['bandOff',    'band shift', -0.5,  0.5,  0.01, 0.0],
+    ['spaceExp',   'band curve',  0.4,  2.5,  0.01, 1.0],
+    ['soft',       'blur',        0.01, 0.5,  0.005, 0.09],
+    ['glowStr',    'glow amount', 0.0,  2.0,  0.01, 0.55],
+    ['glowFall',   'glow reach',  0.05, 1.0,  0.01, 0.28],
+  ]],
+  ['Animation', [
+    ['pulseSpeed', 'pulse speed', 0.0,  3.0,  0.01, 0.9],
+    ['pulseAmt',   'pulse depth', 0.0,  0.35, 0.005, 0.05],
+    ['pulseShape', 'sine↔beat',   0.0,  1.0,  0.01, 1.0],
+    ['beatSharp',  'beat punch',  3,   40,    0.5,  14],
+    ['spin',       'spin speed', -1.0,  1.0,  0.01, 0.0],
+    ['hueCycle',   'hue cycle',  -1.0,  1.0,  0.01, 0.0],
+  ]],
+  ['Glitch Slices', [
+    ['sliceMix',   'slice mix',   0.0,  1.0,  0.01, 0.0],
+    ['sliceCount', 'slice count', 2,   80,    1,    16],
+    ['sliceOffX',  'shift x',     0.0,  0.6,  0.005, 0.08],
+    ['sliceOffY',  'shift y',     0.0,  0.6,  0.005, 0.04],
+    ['sliceZoom',  'stretch',     0.0,  1.0,  0.01, 0.2],
+    ['sliceSeed',  'seed',        0,  100,    1,    7],
+    ['stripShade', 'edge shade',  0.0,  1.0,  0.01, 0.65],
+    ['shadeWidth', 'shade width', 0.0,  1.0,  0.01, 0.5],
+    ['drift',      'drift speed', 0.0,  2.0,  0.01, 0.25],
+  ]],
+  ['Post FX', [
+    ['chromAb',    'chroma split',0.0,  0.03, 0.0005, 0.0],
+    ['grain',      'grain',       0.0,  0.3,  0.005, 0.04],
+    ['vig',        'vignette',    0.0,  1.0,  0.01, 0.35],
+    ['bright',     'brightness',  0.4,  1.6,  0.01, 1.0],
+    ['contrast',   'contrast',    0.4,  1.6,  0.01, 1.05],
+    ['sat',        'saturation',  0.0,  2.0,  0.01, 1.1],
+  ]],
+];
+
+// [key, label, default hex]  — band colors, innermost first
+const COLORS = [
+  ['colCore',  'core',       '#54061f'],
+  ['colBlue',  'ring 1',     '#2a6bfa'],
+  ['colRed',   'ring 2',     '#ff2038'],
+  ['colPeach', 'ring 3',     '#ff8f7a'],
+  ['colLav',   'ring 4',     '#f5bfd0'],
+  ['colGlow',  'glow',       '#a678ff'],
+  ['colBg',    'background', '#20102f'],
+];
+
+const PRESETS = {
+  aura:   { sliceMix: 0.0, chromAb: 0.0, soft: 0.09, pulseAmt: 0.05 },
+  sliced: { sliceMix: 1.0, sliceCount: 16, sliceOffX: 0.08, sliceOffY: 0.04,
+            sliceZoom: 0.2, stripShade: 0.5, shadeWidth: 0.3, chromAb: 0.002,
+            drift: 0.25, soft: 0.09 },
+};
+
+// ---------------------------------------------------------------- shaders
+const VERT = `
+attribute vec2 a_pos;
+void main(){ gl_Position = vec4(a_pos, 0.0, 1.0); }
+`;
+
+const FRAG = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+
+uniform vec2  u_res;
+uniform float u_time;
+
+uniform float u_scale, u_posX, u_posY, u_stretchX, u_stretchY, u_rot, u_round;
+uniform float u_spread, u_bandOff, u_spaceExp, u_soft, u_glowStr, u_glowFall;
+uniform float u_pulseSpeed, u_pulseAmt, u_pulseShape, u_beatSharp, u_spin, u_hueCycle;
+uniform float u_sliceMix, u_sliceCount, u_sliceOffX, u_sliceOffY, u_sliceZoom;
+uniform float u_sliceSeed, u_stripShade, u_shadeWidth, u_drift;
+uniform float u_chromAb, u_grain, u_vig, u_bright, u_contrast, u_sat;
+uniform vec3  u_colCore, u_colBlue, u_colRed, u_colPeach, u_colLav, u_colGlow, u_colBg;
+
+float dot2(vec2 v){ return dot(v, v); }
+// sin-free hashes (Dave Hoskins) — stable on mediump mobile GPUs
+float hash(float n){
+  n = fract(n * 0.1031);
+  n *= n + 33.33;
+  n *= n + n;
+  return fract(n);
+}
+float hash2(vec2 p){
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+// exact heart SDF (Inigo Quilez) — tip at origin, lobes toward y = 1
+float sdHeart(vec2 p){
+  p.x = abs(p.x);
+  if (p.y + p.x > 1.0)
+    return sqrt(dot2(p - vec2(0.25, 0.75))) - 0.35355339;
+  return sqrt(min(dot2(p - vec2(0.0, 1.0)),
+                  dot2(p - 0.5 * max(p.x + p.y, 0.0)))) * sign(p.x - p.y);
+}
+
+float gauss(float x, float c, float w){
+  float d = (x - c) * w;
+  return exp(-d * d);
+}
+
+// heartbeat curve: sine blended toward a double-thump
+float pulse(){
+  float t = fract(u_time * u_pulseSpeed);
+  float sine = 0.5 + 0.5 * sin(6.2831853 * t);
+  float beat = gauss(t, 0.12, u_beatSharp) + 0.55 * gauss(t, 0.34, u_beatSharp * 1.1);
+  return mix(sine, min(beat, 1.0), u_pulseShape);
+}
+
+float warpStop(float s){
+  return sign(s) * pow(abs(s), u_spaceExp) * u_spread + u_bandOff;
+}
+
+vec3 hueRotate(vec3 c, float a){
+  const vec3 k = vec3(0.57735026);
+  float ca = cos(a), sa = sin(a);
+  return c * ca + cross(k, c) * sa + k * dot(k, c) * (1.0 - ca);
+}
+
+// nested-heart gradient at aspect-corrected screen point uv
+vec3 heartColor(vec2 uv){
+  vec2 p = uv - vec2(u_posX, u_posY);
+  float ang = radians(u_rot) + u_time * u_spin;
+  float ca = cos(ang), sa = sin(ang);
+  p = vec2(ca * p.x - sa * p.y, sa * p.x + ca * p.y);
+
+  float sc = u_scale * (1.0 + u_pulseAmt * pulse());
+  p /= sc;
+  p.x /= u_stretchX;
+  p.y /= u_stretchY;
+  p.y += 0.5; // heart occupies y in [0,1] in SDF space
+
+  float d = sdHeart(p);
+  float dc = length(p - vec2(0.0, 0.55)) - 0.55;
+  d = mix(d, dc, u_round);
+
+  float soft = u_soft * u_spread;
+  float p0 = warpStop(-0.20);
+  float p1 = warpStop(-0.115);
+  float p2 = warpStop(-0.03);
+  float p3 = warpStop( 0.09);
+  float p4 = warpStop( 0.22);
+  float p5 = warpStop( 0.60);
+
+  vec3 c = u_colCore;
+  c = mix(c, u_colBlue,  smoothstep(p0 - soft, p0 + soft, d));
+  c = mix(c, u_colRed,   smoothstep(p1 - soft, p1 + soft, d));
+  c = mix(c, u_colPeach, smoothstep(p2 - soft, p2 + soft, d));
+  c = mix(c, u_colLav,   smoothstep(p3 - soft, p3 + soft, d));
+  c = mix(c, u_colBg,    smoothstep(p4 - soft, p5 + soft, d));
+
+  float glowMask = smoothstep(p4 - soft, p5, d);
+  c += u_colGlow * u_glowStr * glowMask * exp(-max(d - p4, 0.0) / max(u_glowFall, 0.01));
+  return c;
+}
+
+// vertical-strip glitch warp; also outputs per-strip edge shading
+vec3 render(vec2 uv, vec2 suv){
+  float shade = 1.0;
+  vec2 wuv = uv;
+  if (u_sliceMix > 0.001){
+    float n = max(u_sliceCount, 1.0);
+    float sx = suv.x * 0.5 + 0.5;
+    float idx = floor(sx * n);
+    float local = fract(sx * n);
+
+    float h1 = hash(idx * 7.31 + u_sliceSeed * 1.13 + 3.7);
+    float h2 = hash(idx * 3.77 + u_sliceSeed * 2.71 + 11.0);
+    float h3 = hash(idx * 9.13 + u_sliceSeed * 0.93 + 27.0);
+
+    float dr = sin(u_time * u_drift * 2.0 + idx * 1.71);
+    float dc2 = cos(u_time * u_drift * 1.6 + idx * 2.39);
+
+    // stretch x about the strip centre, then shift
+    float cxs = ((idx + 0.5) / n) * 2.0 - 1.0; // strip centre in suv space
+    float aspect = u_res.x / u_res.y;
+    float cx = cxs * aspect;                    // strip centre in aspect space
+    float stretch = 1.0 + h3 * 2.0 * u_sliceZoom;
+    float ox = ((h1 - 0.5) * 2.0 + 0.4 * dr)  * u_sliceOffX;
+    float oy = ((h2 - 0.5) * 2.0 + 0.4 * dc2) * u_sliceOffY;
+
+    vec2 guv = uv;
+    guv.x = cx + (uv.x - cx) / stretch + ox;
+    guv.y = uv.y + oy;
+    wuv = mix(uv, guv, u_sliceMix);
+
+    float e = min(local, 1.0 - local) * 2.0;    // 0 at edges, 1 at centre
+    float g = mix(10.0, 1.2, clamp(u_shadeWidth, 0.0, 1.0));
+    float sh = 1.0 - u_stripShade * pow(1.0 - e, g);
+    shade = mix(1.0, sh, u_sliceMix);
+  }
+  return heartColor(wuv) * shade;
+}
+
+void main(){
+  vec2 suv = (2.0 * gl_FragCoord.xy - u_res) / u_res;     // -1..1 both axes
+  vec2 uv  = (2.0 * gl_FragCoord.xy - u_res) / u_res.y;   // aspect corrected
+
+  vec3 col;
+  if (u_chromAb > 0.0001){
+    col.r = render(uv * (1.0 - u_chromAb), suv).r;
+    col.g = render(uv, suv).g;
+    col.b = render(uv * (1.0 + u_chromAb), suv).b;
+  } else {
+    col = render(uv, suv);
+  }
+
+  if (abs(u_hueCycle) > 0.001) col = hueRotate(col, u_time * u_hueCycle * 2.0);
+
+  // grade
+  float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
+  col = mix(vec3(luma), col, u_sat);
+  col = (col - 0.5) * u_contrast + 0.5;
+  col *= u_bright;
+
+  col *= 1.0 - u_vig * smoothstep(0.45, 1.5, length(suv));
+  col += (hash2(gl_FragCoord.xy + fract(u_time) * 137.0) - 0.5) * u_grain;
+
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+// ---------------------------------------------------------------- gl setup
+const canvas = document.getElementById('glcanvas');
+const gl = canvas.getContext('webgl', { antialias: false, preserveDrawingBuffer: true })
+        || canvas.getContext('experimental-webgl', { antialias: false, preserveDrawingBuffer: true });
+const errBox = document.getElementById('err');
+if (!gl) errBox.textContent = 'WebGL is not available in this browser/WebView.';
+
+function compile(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)){
+    throw new Error(gl.getShaderInfoLog(s));
+  }
+  return s;
+}
+
+let prog;
+try {
+  prog = gl.createProgram();
+  gl.attachShader(prog, compile(gl.VERTEX_SHADER, VERT));
+  gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FRAG));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  gl.useProgram(prog);
+} catch (e) {
+  errBox.textContent = 'Shader error:\n' + e.message;
+  throw e;
+}
+
+const buf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+const aPos = gl.getAttribLocation(prog, 'a_pos');
+gl.enableVertexAttribArray(aPos);
+gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+const loc = {};
+function u(name){ return loc[name] || (loc[name] = gl.getUniformLocation(prog, name)); }
+
+// ---------------------------------------------------------------- state + UI
+const state = {};
+const defaults = {};
+const inputs = {};
+
+function hexToRgb(hex){
+  const v = parseInt(hex.slice(1), 16);
+  return [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255];
+}
+
+const groupsEl = document.getElementById('groups');
+
+for (const [title, items] of GROUPS){
+  const det = document.createElement('details');
+  det.open = true;
+  det.innerHTML = `<summary>${title}</summary>`;
+  for (const [key, label, min, max, step, def] of items){
+    state[key] = def;
+    defaults[key] = def;
+    const row = document.createElement('div');
+    row.className = 'ctl';
+    row.innerHTML = `<label>${label}</label><input type="range" min="${min}" max="${max}" step="${step}" value="${def}"><span class="val"></span>`;
+    const input = row.querySelector('input');
+    const val = row.querySelector('.val');
+    const show = v => { val.textContent = (+v).toFixed(step >= 1 ? 0 : step >= 0.01 ? 2 : 3); };
+    show(def);
+    input.addEventListener('input', () => { state[key] = +input.value; show(input.value); });
+    inputs[key] = { input, show };
+    det.appendChild(row);
+  }
+  groupsEl.appendChild(det);
+}
+
+{
+  const det = document.createElement('details');
+  det.open = true;
+  det.innerHTML = '<summary>Colors</summary>';
+  for (const [key, label, def] of COLORS){
+    state[key] = def;
+    defaults[key] = def;
+    const row = document.createElement('div');
+    row.className = 'ctl';
+    row.innerHTML = `<label>${label}</label><input type="color" value="${def}"><span class="val"></span>`;
+    const input = row.querySelector('input');
+    input.addEventListener('input', () => { state[key] = input.value; });
+    inputs[key] = { input, show: () => {} };
+    det.appendChild(row);
+  }
+  groupsEl.appendChild(det);
+}
+
+function setParam(key, v){
+  state[key] = v;
+  const ui = inputs[key];
+  if (ui){ ui.input.value = v; ui.show(v); }
+}
+function applyValues(obj){ for (const k in obj) setParam(k, obj[k]); }
+
+document.getElementById('reset').onclick = () => applyValues(defaults);
+document.getElementById('presetAura').onclick = () => applyValues({ ...defaults, ...PRESETS.aura });
+document.getElementById('presetSliced').onclick = () => applyValues({ ...defaults, ...PRESETS.sliced });
+
+document.getElementById('randomize').onclick = () => {
+  const r = (a, b) => a + Math.random() * (b - a);
+  applyValues({
+    sliceMix: r(0.5, 1), sliceCount: Math.round(r(5, 40)), sliceSeed: Math.round(r(0, 100)),
+    sliceOffX: r(0.02, 0.3), sliceOffY: r(0, 0.15), sliceZoom: r(0.1, 0.8),
+    stripShade: r(0.3, 0.9), drift: r(0, 1),
+    rot: Math.round(r(-25, 25)), spaceExp: r(0.7, 1.6), soft: r(0.06, 0.25),
+  });
+};
+
+let paused = false, t0 = performance.now(), timeAcc = 0;
+document.getElementById('pause').onclick = e => {
+  if (!paused) timeAcc += (performance.now() - t0) / 1000;
+  else t0 = performance.now();
+  paused = !paused;
+  e.target.textContent = paused ? 'Play' : 'Pause';
+};
+
+document.getElementById('savepng').onclick = () => {
+  const a = document.createElement('a');
+  a.download = 'aura-heart.png';
+  a.href = canvas.toDataURL('image/png');
+  a.click();
+};
+
+const panel = document.getElementById('panel');
+const toggle = document.getElementById('toggleUI');
+toggle.onclick = () => {
+  panel.classList.toggle('hidden');
+  toggle.classList.toggle('solo');
+};
+
+// ---------------------------------------------------------------- render loop
+function resize(){
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.floor(innerWidth * dpr), h = Math.floor(innerHeight * dpr);
+  if (canvas.width !== w || canvas.height !== h){
+    canvas.width = w; canvas.height = h;
+    gl.viewport(0, 0, w, h);
+  }
+}
+window.addEventListener('resize', resize);
+resize();
+
+function frame(){
+  resize();
+  const t = (paused ? timeAcc : timeAcc + (performance.now() - t0) / 1000) % 3600;
+  gl.uniform2f(u('u_res'), canvas.width, canvas.height);
+  gl.uniform1f(u('u_time'), t);
+  for (const k in state){
+    const v = state[k];
+    if (typeof v === 'number') gl.uniform1f(u('u_' + k), v);
+    else gl.uniform3fv(u('u_' + k), hexToRgb(v));
+  }
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
