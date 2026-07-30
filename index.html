@@ -105,10 +105,11 @@ const GROUPS = [
     ['scale',      'size',        0.2,  2.5,  0.01, 0.78],
     ['posX',       'center x',   -1.0,  1.0,  0.01, 0.0],
     ['posY',       'center y',   -1.0,  1.0,  0.01, 0.0],
-    ['stretchX',   'width',       0.4,  2.0,  0.01, 1.08],
+    ['stretchX',   'width',       0.4,  2.0,  0.01, 1.0],
     ['stretchY',   'height',      0.4,  2.0,  0.01, 1.0],
     ['rot',        'rotation°', -180,  180,   1,    0],
-    ['round',      'roundness',   0.0,  1.0,  0.01, 0.10],
+    ['round',      'roundness',   0.0,  1.0,  0.01, 0.0],
+    ['shapeMix',   'svg↔classic', 0.0,  1.0,  0.01, 0.0],
   ]],
   ['Color Bands', [
     ['spread',     'band spread', 0.3,  2.5,  0.01, 1.0],
@@ -194,6 +195,8 @@ uniform float u_sliceSkew, u_slicePersp, u_sliceRandom;
 uniform float u_chromAb, u_grain, u_vig, u_bright, u_contrast, u_sat;
 uniform float u_imageMix, u_imgAspect;
 uniform sampler2D u_image;
+uniform float u_shapeMix;
+uniform sampler2D u_sdf;
 uniform vec3  u_colCore, u_colBlue, u_colRed, u_colPeach, u_colLav, u_colGlow, u_colBg;
 
 float dot2(vec2 v){ return dot(v, v); }
@@ -217,6 +220,32 @@ float sdHeart(vec2 p){
     return sqrt(dot2(p - vec2(0.25, 0.75))) - 0.35355339;
   return sqrt(min(dot2(p - vec2(0.0, 1.0)),
                   dot2(p - 0.5 * max(p.x + p.y, 0.0)))) * sign(p.x - p.y);
+}
+
+// SDF baked from the SVG heart outline into a 16-bit texture over
+// domain x,y in [-2,2]x[-1.5,2.5]; decode kept mediump-safe
+const float SDF_TS = 192.0;
+float sdfDecode(vec4 t){
+  return (t.r * 256.0 + t.g) / 257.0 * 3.5 - 0.75;
+}
+float sdSvg(vec2 p){
+  vec2 uv = (p - vec2(-2.0, -1.5)) / 4.0;
+  vec2 f = clamp(uv * SDF_TS - 0.5, 0.0, SDF_TS - 1.001);
+  vec2 b = floor(f);
+  vec2 fr = f - b;
+  vec2 t0 = (b + 0.5) / SDF_TS;
+  float px = 1.0 / SDF_TS;
+  float d00 = sdfDecode(texture2D(u_sdf, t0));
+  float d10 = sdfDecode(texture2D(u_sdf, t0 + vec2(px, 0.0)));
+  float d01 = sdfDecode(texture2D(u_sdf, t0 + vec2(0.0, px)));
+  float d11 = sdfDecode(texture2D(u_sdf, t0 + vec2(px, px)));
+  return mix(mix(d00, d10, fr.x), mix(d01, d11, fr.x), fr.y);
+}
+
+float heartSDF(vec2 p){
+  if (u_shapeMix > 0.999) return sdHeart(p);
+  if (u_shapeMix < 0.001) return sdSvg(p);
+  return mix(sdSvg(p), sdHeart(p), u_shapeMix);
 }
 
 float gauss(float x, float c, float w){
@@ -255,7 +284,7 @@ vec3 heartColor(vec2 uv){
   p.y /= u_stretchY;
   p.y += 0.5; // heart occupies y in [0,1] in SDF space
 
-  float d = sdHeart(p);
+  float d = heartSDF(p);
   float dc = length(p - vec2(0.0, 0.55)) - 0.55;
   d = mix(d, dc, u_round);
 
@@ -417,6 +446,51 @@ try {
   errBox.textContent = 'Shader error:\n' + e.message;
   throw e;
 }
+
+// ------------------------------------------------------------ SVG heart SDF
+// polygon sampled from the reference heart SVG: tip at (0,0), lobes at y=1
+const HEART_PTS = [0.545,0.670,0.543,0.705,0.537,0.741,0.528,0.775,0.515,0.808,0.498,0.840,0.477,0.869,0.453,0.895,0.426,0.919,0.397,0.940,0.367,0.959,0.335,0.975,0.301,0.988,0.266,0.996,0.231,1.000,0.195,0.999,0.160,0.994,0.126,0.984,0.093,0.968,0.065,0.947,0.041,0.921,0.022,0.891,0.007,0.858,-0.004,0.842,-0.017,0.875,-0.034,0.907,-0.055,0.935,-0.082,0.959,-0.112,0.977,-0.146,0.990,-0.181,0.998,-0.217,1.000,-0.252,0.998,-0.287,0.992,-0.322,0.981,-0.354,0.966,-0.385,0.949,-0.415,0.929,-0.442,0.906,-0.467,0.880,-0.489,0.852,-0.508,0.822,-0.523,0.790,-0.535,0.756,-0.542,0.721,-0.545,0.685,-0.545,0.649,-0.541,0.614,-0.533,0.579,-0.523,0.545,-0.510,0.511,-0.496,0.479,-0.479,0.447,-0.461,0.416,-0.442,0.385,-0.422,0.356,-0.401,0.327,-0.379,0.299,-0.357,0.271,-0.333,0.244,-0.309,0.218,-0.284,0.192,-0.258,0.167,-0.232,0.143,-0.205,0.119,-0.178,0.096,-0.149,0.074,-0.120,0.053,-0.090,0.034,-0.059,0.017,-0.026,0.003,0.009,0.000,0.043,0.011,0.075,0.027,0.106,0.045,0.136,0.066,0.164,0.087,0.192,0.109,0.219,0.133,0.246,0.157,0.272,0.181,0.297,0.207,0.321,0.233,0.345,0.260,0.368,0.287,0.391,0.315,0.412,0.343,0.433,0.373,0.452,0.403,0.471,0.433,0.488,0.465,0.503,0.497,0.517,0.530,0.528,0.564,0.537,0.599,0.543,0.634];
+
+// bake a signed-distance field of the polygon into an RG16-encoded texture,
+// domain [-2,2]x[-1.5,2.5], matching SDF_TS and sdfDecode in the shader
+function buildSdfTexture(){
+  const TS = 192, n = HEART_PTS.length / 2;
+  const data = new Uint8Array(TS * TS * 4);
+  for (let j = 0; j < TS; j++){
+    const py = -1.5 + 4.0 * (j + 0.5) / TS;
+    for (let i2 = 0; i2 < TS; i2++){
+      const px = -2.0 + 4.0 * (i2 + 0.5) / TS;
+      let best = 1e9;
+      let inside = false;
+      for (let k = 0; k < n; k++){
+        const ax = HEART_PTS[k*2],           ay = HEART_PTS[k*2+1];
+        const bx = HEART_PTS[((k+1)%n)*2],   by = HEART_PTS[((k+1)%n)*2+1];
+        const ex = bx - ax, ey = by - ay;
+        const wx = px - ax, wy = py - ay;
+        const t = Math.max(0, Math.min(1, (wx*ex + wy*ey) / (ex*ex + ey*ey)));
+        const dx = wx - ex*t, dy = wy - ey*t;
+        const dist = dx*dx + dy*dy;
+        if (dist < best) best = dist;
+        if ((ay > py) !== (by > py) && wx < ex * (py - ay) / ey) inside = !inside;
+      }
+      const d = (inside ? -1 : 1) * Math.sqrt(best);
+      const v = Math.max(0, Math.min(65535, Math.round((d + 0.75) / 3.5 * 65535)));
+      const o = (j * TS + i2) * 4;
+      data[o] = v >> 8; data[o+1] = v & 255; data[o+2] = 0; data[o+3] = 255;
+    }
+  }
+  const t = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, TS, TS, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+  gl.activeTexture(gl.TEXTURE0);
+}
+buildSdfTexture();
+gl.uniform1i(gl.getUniformLocation(prog, 'u_sdf'), 1);
 
 const buf = gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER, buf);
