@@ -112,6 +112,7 @@ const GROUPS = [
     ['shapeMix',   'svg↔classic', 0.0,  1.0,  0.01, 0.0],
   ]],
   ['Color Bands', [
+    ['nestMix',    'nested↔offset', 0.0, 1.0, 0.01, 0.0],
     ['spread',     'band spread', 0.3,  2.5,  0.01, 1.0],
     ['bandOff',    'band shift', -0.5,  0.5,  0.01, 0.0],
     ['spaceExp',   'band curve',  0.4,  2.5,  0.01, 1.0],
@@ -154,11 +155,11 @@ const GROUPS = [
 // [key, label, default hex]  — band colors, innermost first
 const COLORS = [
   ['colCore',  'core',       '#54061f'],
-  ['colBlue',  'ring 1',     '#2a6bfa'],
+  ['colBlue',  'ring 1',     '#2f7dff'],
   ['colRed',   'ring 2',     '#ff2038'],
-  ['colPeach', 'ring 3',     '#ff8f7a'],
-  ['colLav',   'ring 4',     '#f5bfd0'],
-  ['colGlow',  'glow',       '#a678ff'],
+  ['colPeach', 'ring 3',     '#ff8f76'],
+  ['colLav',   'ring 4',     '#f8c4ce'],
+  ['colGlow',  'glow',       '#b48cff'],
   ['colBg',    'background', '#20102f'],
 ];
 
@@ -195,8 +196,9 @@ uniform float u_sliceSkew, u_slicePersp, u_sliceRandom;
 uniform float u_chromAb, u_grain, u_vig, u_bright, u_contrast, u_sat;
 uniform float u_imageMix, u_imgAspect;
 uniform sampler2D u_image;
-uniform float u_shapeMix;
+uniform float u_shapeMix, u_nestMix;
 uniform sampler2D u_sdf;
+uniform sampler2D u_rad;
 uniform vec3  u_colCore, u_colBlue, u_colRed, u_colPeach, u_colLav, u_colGlow, u_colBg;
 
 float dot2(vec2 v){ return dot(v, v); }
@@ -242,10 +244,42 @@ float sdSvg(vec2 p){
   return mix(mix(d00, d10, fr.x), mix(d01, d11, fr.x), fr.y);
 }
 
+// polar radius of the heart about its centre, from a 512x1 lookup table
+float radiusAt(float ang){
+  float x = (ang + 3.14159265) / 6.2831853 * 512.0 - 0.5;
+  float b = floor(x);
+  float fr = x - b;
+  float u0 = (mod(b, 512.0) + 0.5) / 512.0;
+  float u1 = (mod(b + 1.0, 512.0) + 0.5) / 512.0;
+  vec4 t0 = texture2D(u_rad, vec2(u0, 0.5));
+  vec4 t1 = texture2D(u_rad, vec2(u1, 0.5));
+  float r0 = (t0.r * 256.0 + t0.g) / 257.0;
+  float r1 = (t1.r * 256.0 + t1.g) / 257.0;
+  return mix(r0, r1, fr) * 1.5;
+}
+
+// nested field: iso-contours are scaled copies of the heart, so every ring
+// keeps the notch and the tip (this is how the reference wallpaper nests)
+float sdNested(vec2 p){
+  vec2 v = p - vec2(0.0, 0.5);
+  float len = length(v);
+  if (len < 1e-4) return -0.55;
+  float R = radiusAt(atan(v.y, v.x));
+  return (len / max(R, 1e-3) - 1.0) * 0.55;
+}
+
 float heartSDF(vec2 p){
-  if (u_shapeMix > 0.999) return sdHeart(p);
-  if (u_shapeMix < 0.001) return sdSvg(p);
-  return mix(sdSvg(p), sdHeart(p), u_shapeMix);
+  float dOff;
+  if      (u_shapeMix > 0.999) dOff = sdHeart(p);
+  else if (u_shapeMix < 0.001) dOff = sdSvg(p);
+  else                         dOff = mix(sdSvg(p), sdHeart(p), u_shapeMix);
+  if (u_nestMix > 0.999) return dOff;
+  // nested rings near the heart, easing into offset rings with distance, so
+  // inner rings keep a deep notch and the halo smooths out (as in the
+  // reference wallpaper); u_nestMix pushes the whole field toward offset
+  float dN = sdNested(p);
+  float w = mix(smoothstep(0.05, 0.65, dN), 1.0, u_nestMix);
+  return mix(dN, dOff, w);
 }
 
 float gauss(float x, float c, float w){
@@ -289,12 +323,12 @@ vec3 heartColor(vec2 uv){
   d = mix(d, dc, u_round);
 
   float soft = u_soft * u_spread;
-  float p0 = warpStop(-0.20);
-  float p1 = warpStop(-0.115);
+  float p0 = warpStop(-0.265);
+  float p1 = warpStop(-0.14);
   float p2 = warpStop(-0.03);
   float p3 = warpStop( 0.09);
-  float p4 = warpStop( 0.22);
-  float p5 = warpStop( 0.60);
+  float p4 = warpStop( 0.23);
+  float p5 = warpStop( 0.62);
 
   vec3 c = u_colCore;
   c = mix(c, u_colBlue,  smoothstep(p0 - soft, p0 + soft, d));
@@ -491,6 +525,41 @@ function buildSdfTexture(){
 }
 buildSdfTexture();
 gl.uniform1i(gl.getUniformLocation(prog, 'u_sdf'), 1);
+
+// bake the heart's polar radius about (0, 0.5) into a 512x1 lookup table
+function buildRadialTexture(){
+  const RT = 512, n = HEART_PTS.length / 2, ax = 0, ay = 0.5;
+  const data = new Uint8Array(RT * 4);
+  for (let i2 = 0; i2 < RT; i2++){
+    const ang = (i2 + 0.5) / RT * Math.PI * 2 - Math.PI;
+    const dx = Math.cos(ang), dy = Math.sin(ang);
+    let best = 0;
+    for (let k = 0; k < n; k++){
+      const x1 = HEART_PTS[k*2],         y1 = HEART_PTS[k*2+1];
+      const x2 = HEART_PTS[((k+1)%n)*2], y2 = HEART_PTS[((k+1)%n)*2+1];
+      const ex = x2 - x1, ey = y2 - y1;
+      const den = dx * ey - dy * ex;
+      if (Math.abs(den) < 1e-12) continue;
+      const wx = x1 - ax, wy = y1 - ay;
+      const t = (wx * ey - wy * ex) / den;
+      const s = (wx * dy - wy * dx) / den;
+      if (t > 0 && s >= 0 && s <= 1 && t > best) best = t;
+    }
+    const v = Math.max(0, Math.min(65535, Math.round(best / 1.5 * 65535)));
+    data[i2*4] = v >> 8; data[i2*4+1] = v & 255; data[i2*4+2] = 0; data[i2*4+3] = 255;
+  }
+  const t = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE2);
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, RT, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+  gl.activeTexture(gl.TEXTURE0);
+}
+buildRadialTexture();
+gl.uniform1i(gl.getUniformLocation(prog, 'u_rad'), 2);
 
 const buf = gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER, buf);
