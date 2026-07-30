@@ -678,47 +678,65 @@ function sampleGradientHex(u){
   return '#' + c.map(v => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, '0')).join('');
 }
 
-function updateGradUI(){
-  const handles = document.getElementById('gradHandles');
-  handles.innerHTML = '';
-  gradStops.forEach((s, i) => {
-    const h = document.createElement('div');
-    h.style.cssText = `position:absolute; top:0; width:14px; height:14px; border-radius:50%;
-      background:${s.c}; left:calc(${(s.p * 100).toFixed(2)}% - 7px); cursor:ew-resize;
-      border:2px solid ${i === selStop ? '#fff' : 'rgba(255,255,255,0.35)'}; box-sizing:border-box;`;
-    h.addEventListener('pointerdown', e => {
-      e.preventDefault();
-      selStop = i;
-      updateGradUI();
-      const bar = document.getElementById('gradBar');
-      const rect = bar.getBoundingClientRect();
-      const move = ev => {
-        const lo = i > 0 ? gradStops[i-1].p + 0.01 : 0;
-        const hi = i < gradStops.length - 1 ? gradStops[i+1].p - 0.01 : 1;
-        gradStops[i].p = Math.max(lo, Math.min(hi, (ev.clientX - rect.left) / rect.width));
-        bakeGradient();
-        h.style.left = `calc(${(gradStops[i].p * 100).toFixed(2)}% - 7px)`;
-        document.getElementById('gradPos').textContent = gradStops[i].p.toFixed(2);
-      };
-      const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
-      window.addEventListener('pointermove', move);
-      window.addEventListener('pointerup', up);
-    });
-    handles.appendChild(h);
-  });
+function styleHandle(h, i){
+  const s = gradStops[i];
+  h.style.left = `calc(${(s.p * 100).toFixed(2)}% - 7px)`;
+  h.style.background = s.c;
+  h.style.border = `2px solid ${i === selStop ? '#fff' : 'rgba(255,255,255,0.35)'}`;
+}
+
+function syncStopInputs(){
   const sel = gradStops[selStop];
+  if (!sel) return;
   document.getElementById('gradColor').value = sel.c;
   document.getElementById('gradPos').textContent = sel.p.toFixed(2);
   const hexInput = document.getElementById('gradHex');
   if (document.activeElement !== hexInput) hexInput.value = sel.c;
 }
 
+function updateGradUI(){
+  const handles = document.getElementById('gradHandles');
+  handles.innerHTML = '';
+  gradStops.forEach((s, i) => {
+    const h = document.createElement('div');
+    h.style.cssText = 'position:absolute; top:0; width:14px; height:14px; border-radius:50%; cursor:ew-resize; box-sizing:border-box; touch-action:none;';
+    styleHandle(h, i);
+    h.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      selStop = i;
+      Array.prototype.forEach.call(handles.children, (el, j) => styleHandle(el, j));
+      syncStopInputs();
+      const rect = document.getElementById('gradBar').getBoundingClientRect();
+      h.setPointerCapture(e.pointerId);
+      const move = ev => {
+        const lo = i > 0 ? gradStops[i-1].p + 0.01 : 0;
+        const hi = i < gradStops.length - 1 ? gradStops[i+1].p - 0.01 : 1;
+        gradStops[i].p = Math.max(lo, Math.min(hi, (ev.clientX - rect.left) / rect.width));
+        styleHandle(h, i);
+        document.getElementById('gradPos').textContent = gradStops[i].p.toFixed(2);
+        bakeGradient();
+      };
+      const up = () => {
+        h.removeEventListener('pointermove', move);
+        h.removeEventListener('pointerup', up);
+        h.removeEventListener('pointercancel', up);
+        syncStopInputs();
+      };
+      h.addEventListener('pointermove', move);
+      h.addEventListener('pointerup', up);
+      h.addEventListener('pointercancel', up);
+    });
+    handles.appendChild(h);
+  });
+  syncStopInputs();
+}
+
 function addStopAt(u){
-  const c = sampleGradientHex(u);
-  gradStops.push({ p: Math.max(0, Math.min(1, u)), c });
+  u = Math.max(0, Math.min(1, u));
+  const stop = { p: u, c: sampleGradientHex(u) };
+  gradStops.push(stop);
   gradStops.sort((a, b) => a.p - b.p);
-  selStop = gradStops.findIndex(s => s.p === Math.max(0, Math.min(1, u)) && s.c === c);
-  if (selStop < 0) selStop = 0;
+  selStop = gradStops.indexOf(stop);
   bakeGradient();
   updateGradUI();
 }
