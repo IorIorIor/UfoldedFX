@@ -45,6 +45,12 @@
   input[type=range]::-moz-range-track { height: 3px; background: rgba(255,255,255,0.18); border-radius: 2px; }
   input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); border: none; }
   input[type=color] { width: 100%; height: 22px; border: none; background: none; padding: 0; cursor: pointer; }
+  input.hex {
+    font-family: inherit; font-size: 10px; color: var(--text); letter-spacing: 1px;
+    background: rgba(255,255,255,0.06); border: 1px solid var(--panel-border);
+    border-radius: 4px; padding: 4px 6px; width: 100%; text-transform: lowercase;
+  }
+  input.hex:focus { outline: none; border-color: var(--accent); }
 
   .btnrow { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
   button {
@@ -617,6 +623,11 @@ gradDet.innerHTML = `<summary>Gradient</summary>
     <input type="color" id="gradColor" value="#2f7dff">
     <span class="val" id="gradPos"></span>
   </div>
+  <div class="ctl">
+    <label>hex</label>
+    <input type="text" class="hex" id="gradHex" value="#2f7dff" maxlength="7" spellcheck="false">
+    <span class="val"></span>
+  </div>
   <div class="btnrow">
     <button id="gradAdd">Add Stop</button>
     <button id="gradDel">Delete</button>
@@ -698,6 +709,8 @@ function updateGradUI(){
   const sel = gradStops[selStop];
   document.getElementById('gradColor').value = sel.c;
   document.getElementById('gradPos').textContent = sel.p.toFixed(2);
+  const hexInput = document.getElementById('gradHex');
+  if (document.activeElement !== hexInput) hexInput.value = sel.c;
 }
 
 function addStopAt(u){
@@ -723,6 +736,14 @@ document.getElementById('gradColor').addEventListener('input', e => {
   bakeGradient();
   updateGradUI();
 });
+document.getElementById('gradHex').addEventListener('input', e => {
+  const m = e.target.value.trim().match(/^#?([0-9a-fA-F]{6})$/);
+  if (!m) return;
+  gradStops[selStop].c = '#' + m[1].toLowerCase();
+  bakeGradient();
+  updateGradUI();
+});
+document.getElementById('gradHex').addEventListener('blur', () => updateGradUI());
 document.getElementById('gradBar').addEventListener('dblclick', e => {
   const rect = e.target.getBoundingClientRect();
   addStopAt((e.clientX - rect.left) / rect.width);
@@ -776,10 +797,11 @@ document.getElementById('gradReset').onclick = resetGradient;
     defaults[key] = def;
     const row = document.createElement('div');
     row.className = 'ctl';
-    row.innerHTML = `<label>${label}</label><input type="color" value="${def}"><span class="val"></span>`;
+    row.innerHTML = `<label>${label}</label><input type="color" value="${def}"><span class="val">${def}</span>`;
     const input = row.querySelector('input');
-    input.addEventListener('input', () => { state[key] = input.value; });
-    inputs[key] = { input, show: () => {} };
+    const val = row.querySelector('.val');
+    input.addEventListener('input', () => { state[key] = input.value; val.textContent = input.value; });
+    inputs[key] = { input, show: v => { val.textContent = v; } };
     det.appendChild(row);
   }
   groupsEl.appendChild(det);
