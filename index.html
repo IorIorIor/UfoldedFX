@@ -152,15 +152,20 @@ const GROUPS = [
   ]],
 ];
 
-// [key, label, default hex]  — band colors, innermost first
+// [key, label, default hex]
 const COLORS = [
-  ['colCore',  'core',       '#54061f'],
-  ['colBlue',  'ring 1',     '#2f7dff'],
-  ['colRed',   'ring 2',     '#ff2038'],
-  ['colPeach', 'ring 3',     '#ff8f76'],
-  ['colLav',   'ring 4',     '#f8c4ce'],
   ['colGlow',  'glow',       '#b48cff'],
-  ['colBg',    'background', '#20102f'],
+];
+
+// gradient stops over the band domain (0 = deep core, 1 = far background);
+// each stop is where its color takes over, softened by the blur slider
+const DEFAULT_STOPS = [
+  { p: 0.00,  c: '#54061f' },  // core
+  { p: 0.228, c: '#2f7dff' },  // blue
+  { p: 0.328, c: '#ff2038' },  // red
+  { p: 0.416, c: '#ff8f76' },  // salmon
+  { p: 0.512, c: '#f8c4ce' },  // pale pink
+  { p: 0.78,  c: '#20102f' },  // background
 ];
 
 const PRESETS = {
@@ -199,7 +204,9 @@ uniform sampler2D u_image;
 uniform float u_shapeMix, u_nestMix;
 uniform sampler2D u_sdf;
 uniform sampler2D u_rad;
-uniform vec3  u_colCore, u_colBlue, u_colRed, u_colPeach, u_colLav, u_colGlow, u_colBg;
+uniform vec3  u_colGlow;
+uniform sampler2D u_grad;
+uniform float u_glowU0, u_glowU1;
 
 float dot2(vec2 v){ return dot(v, v); }
 // sin-free hashes (Dave Hoskins) — stable on mediump mobile GPUs
@@ -295,9 +302,6 @@ float pulse(){
   return mix(sine, min(beat, 1.0), u_pulseShape);
 }
 
-float warpStop(float s){
-  return sign(s) * pow(abs(s), u_spaceExp) * u_spread + u_bandOff;
-}
 
 vec3 hueRotate(vec3 c, float a){
   const vec3 k = vec3(0.57735026);
@@ -322,23 +326,15 @@ vec3 heartColor(vec2 uv){
   float dc = length(p - vec2(0.0, 0.55)) - 0.55;
   d = mix(d, dc, u_round);
 
-  float soft = u_soft * u_spread;
-  float p0 = warpStop(-0.265);
-  float p1 = warpStop(-0.14);
-  float p2 = warpStop(-0.03);
-  float p3 = warpStop( 0.09);
-  float p4 = warpStop( 0.23);
-  float p5 = warpStop( 0.62);
+  // map the field onto the editable gradient: spread scales, shift slides,
+  // band curve warps, then one texture lookup on the baked 256x1 ramp
+  float dn = (d - u_bandOff) / u_spread;
+  dn = sign(dn) * pow(abs(dn), 1.0 / u_spaceExp);
+  float gu = (dn + 0.55) / 1.25;
+  vec3 c = texture2D(u_grad, vec2(clamp(gu, 0.002, 0.998), 0.5)).rgb;
 
-  vec3 c = u_colCore;
-  c = mix(c, u_colBlue,  smoothstep(p0 - soft, p0 + soft, d));
-  c = mix(c, u_colRed,   smoothstep(p1 - soft, p1 + soft, d));
-  c = mix(c, u_colPeach, smoothstep(p2 - soft, p2 + soft, d));
-  c = mix(c, u_colLav,   smoothstep(p3 - soft, p3 + soft, d));
-  c = mix(c, u_colBg,    smoothstep(p4 - soft, p5 + soft, d));
-
-  float glowMask = smoothstep(p4 - soft, p5, d);
-  c += u_colGlow * u_glowStr * glowMask * exp(-max(d - p4, 0.0) / max(u_glowFall, 0.01));
+  float glowMask = smoothstep(u_glowU0 - u_soft / 1.25, u_glowU1, gu);
+  c += u_colGlow * u_glowStr * glowMask * exp(-max(gu - u_glowU0, 0.0) * 1.25 / max(u_glowFall, 0.01));
   return c;
 }
 
@@ -604,6 +600,149 @@ for (const [title, items] of GROUPS){
   groupsEl.appendChild(det);
 }
 
+// ------------------------------------------------------- gradient editor
+let gradStops = DEFAULT_STOPS.map(s => ({ ...s }));
+let selStop = 1, gradTex = null, bakedSoft = -1;
+
+const gradDet = document.createElement('details');
+gradDet.open = true;
+gradDet.innerHTML = `<summary>Gradient</summary>
+  <div id="gradWrap" style="position:relative; margin:10px 0 22px;">
+    <canvas id="gradBar" width="256" height="1"
+      style="width:100%; height:26px; border-radius:6px; display:block; cursor:copy;"></canvas>
+    <div id="gradHandles" style="position:absolute; left:0; right:0; top:26px; height:16px;"></div>
+  </div>
+  <div class="ctl">
+    <label>stop color</label>
+    <input type="color" id="gradColor" value="#2f7dff">
+    <span class="val" id="gradPos"></span>
+  </div>
+  <div class="btnrow">
+    <button id="gradAdd">Add Stop</button>
+    <button id="gradDel">Delete</button>
+    <button id="gradReset">Reset</button>
+  </div>
+  <div class="sub" style="margin-top:6px;">drag points to move · click to select · double-click bar to add</div>`;
+
+function smoothstepJs(a, b, x){
+  const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
+
+function bakeGradient(){
+  bakedSoft = state.soft;
+  const W = 256, arr = new Uint8ClampedArray(W * 4);
+  const rgbs = gradStops.map(s => hexToRgb(s.c));
+  const softU = Math.max(state.soft / 1.25, 0.004);
+  for (let x = 0; x < W; x++){
+    const u = (x + 0.5) / W;
+    let c = rgbs[0].slice();
+    for (let i = 1; i < gradStops.length; i++){
+      const m = smoothstepJs(gradStops[i].p - softU, gradStops[i].p + softU, u);
+      c = [c[0] + (rgbs[i][0] - c[0]) * m, c[1] + (rgbs[i][1] - c[1]) * m, c[2] + (rgbs[i][2] - c[2]) * m];
+    }
+    arr[x*4] = c[0]*255; arr[x*4+1] = c[1]*255; arr[x*4+2] = c[2]*255; arr[x*4+3] = 255;
+  }
+  if (!gradTex) gradTex = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE3);
+  gl.bindTexture(gl.TEXTURE_2D, gradTex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(arr.buffer));
+  gl.activeTexture(gl.TEXTURE0);
+  const bar = document.getElementById('gradBar');
+  bar.getContext('2d').putImageData(new ImageData(arr, W, 1), 0, 0);
+}
+
+function sampleGradientHex(u){
+  const softU = Math.max(state.soft / 1.25, 0.004);
+  const rgbs = gradStops.map(s => hexToRgb(s.c));
+  let c = rgbs[0].slice();
+  for (let i = 1; i < gradStops.length; i++){
+    const m = smoothstepJs(gradStops[i].p - softU, gradStops[i].p + softU, u);
+    c = [c[0] + (rgbs[i][0] - c[0]) * m, c[1] + (rgbs[i][1] - c[1]) * m, c[2] + (rgbs[i][2] - c[2]) * m];
+  }
+  return '#' + c.map(v => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, '0')).join('');
+}
+
+function updateGradUI(){
+  const handles = document.getElementById('gradHandles');
+  handles.innerHTML = '';
+  gradStops.forEach((s, i) => {
+    const h = document.createElement('div');
+    h.style.cssText = `position:absolute; top:0; width:14px; height:14px; border-radius:50%;
+      background:${s.c}; left:calc(${(s.p * 100).toFixed(2)}% - 7px); cursor:ew-resize;
+      border:2px solid ${i === selStop ? '#fff' : 'rgba(255,255,255,0.35)'}; box-sizing:border-box;`;
+    h.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      selStop = i;
+      updateGradUI();
+      const bar = document.getElementById('gradBar');
+      const rect = bar.getBoundingClientRect();
+      const move = ev => {
+        const lo = i > 0 ? gradStops[i-1].p + 0.01 : 0;
+        const hi = i < gradStops.length - 1 ? gradStops[i+1].p - 0.01 : 1;
+        gradStops[i].p = Math.max(lo, Math.min(hi, (ev.clientX - rect.left) / rect.width));
+        bakeGradient();
+        h.style.left = `calc(${(gradStops[i].p * 100).toFixed(2)}% - 7px)`;
+        document.getElementById('gradPos').textContent = gradStops[i].p.toFixed(2);
+      };
+      const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+    });
+    handles.appendChild(h);
+  });
+  const sel = gradStops[selStop];
+  document.getElementById('gradColor').value = sel.c;
+  document.getElementById('gradPos').textContent = sel.p.toFixed(2);
+}
+
+function addStopAt(u){
+  const c = sampleGradientHex(u);
+  gradStops.push({ p: Math.max(0, Math.min(1, u)), c });
+  gradStops.sort((a, b) => a.p - b.p);
+  selStop = gradStops.findIndex(s => s.p === Math.max(0, Math.min(1, u)) && s.c === c);
+  if (selStop < 0) selStop = 0;
+  bakeGradient();
+  updateGradUI();
+}
+
+function resetGradient(){
+  gradStops = DEFAULT_STOPS.map(s => ({ ...s }));
+  selStop = 1;
+  bakeGradient();
+  updateGradUI();
+}
+
+groupsEl.appendChild(gradDet);
+document.getElementById('gradColor').addEventListener('input', e => {
+  gradStops[selStop].c = e.target.value;
+  bakeGradient();
+  updateGradUI();
+});
+document.getElementById('gradBar').addEventListener('dblclick', e => {
+  const rect = e.target.getBoundingClientRect();
+  addStopAt((e.clientX - rect.left) / rect.width);
+});
+document.getElementById('gradAdd').onclick = () => {
+  let gi = 0, gap = 0;
+  for (let i = 1; i < gradStops.length; i++){
+    if (gradStops[i].p - gradStops[i-1].p > gap){ gap = gradStops[i].p - gradStops[i-1].p; gi = i; }
+  }
+  addStopAt(gradStops[gi-1] ? (gradStops[gi-1].p + gradStops[gi].p) / 2 : 0.5);
+};
+document.getElementById('gradDel').onclick = () => {
+  if (gradStops.length <= 2) return;
+  gradStops.splice(selStop, 1);
+  selStop = Math.max(0, selStop - 1);
+  bakeGradient();
+  updateGradUI();
+};
+document.getElementById('gradReset').onclick = resetGradient;
+
 // image source: slice the shader over a loaded photo or a baked heart frame
 {
   const det = document.createElement('details');
@@ -653,7 +792,7 @@ function setParam(key, v){
 }
 function applyValues(obj){ for (const k in obj) setParam(k, obj[k]); }
 
-document.getElementById('reset').onclick = () => applyValues(defaults);
+document.getElementById('reset').onclick = () => { applyValues(defaults); if (typeof resetGradient === 'function') resetGradient(); };
 document.getElementById('presetAura').onclick = () => applyValues({ ...defaults, ...PRESETS.aura });
 document.getElementById('presetSliced').onclick = () => applyValues({ ...defaults, ...PRESETS.sliced });
 
@@ -705,6 +844,9 @@ resize();
 // ---------------------------------------------------------------- image source
 let tex = null, hasImage = false, imgAspect = 1;
 gl.uniform1i(u('u_image'), 0);
+gl.uniform1i(u('u_grad'), 3);
+bakeGradient();
+updateGradUI();
 
 function ensureTex(){
   if (!tex) tex = gl.createTexture();
@@ -758,10 +900,13 @@ document.getElementById('clearImg').onclick = () => { hasImage = false; };
 // ---------------------------------------------------------------- draw
 function drawScene(overrides){
   resize();
+  if (state.soft !== bakedSoft) bakeGradient();
   const t = (paused ? timeAcc : timeAcc + (performance.now() - t0) / 1000) % 3600;
   gl.uniform2f(u('u_res'), canvas.width, canvas.height);
   gl.uniform1f(u('u_time'), t);
   gl.uniform1f(u('u_imgAspect'), imgAspect);
+  gl.uniform1f(u('u_glowU0'), gradStops[gradStops.length - 2].p);
+  gl.uniform1f(u('u_glowU1'), gradStops[gradStops.length - 1].p);
   for (const k in state){
     let v = (overrides && k in overrides) ? overrides[k] : state[k];
     if (k === 'imageMix' && !hasImage) v = 0;

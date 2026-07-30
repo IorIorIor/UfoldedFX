@@ -21,8 +21,12 @@ npx serve .
   `svg↔classic` blend. The default silhouette is a signed-distance field baked at startup
   from a polygon sampled off the reference heart SVG (embedded in the file — still zero
   external requests); `classic` is an analytic heart SDF.
-- **Color Bands**: band spread/shift/curve, blur, glow amount and reach, plus a color
-  picker for every ring, the glow, and the background.
+- **Color Bands**: band spread/shift/curve, blur, glow amount and reach.
+- **Gradient**: a full gradient editor drives the ring colors — drag stops along the bar
+  to move band boundaries, click one to select it and change its color, double-click the
+  bar (or `Add Stop`) to insert a stop, `Delete` to remove it. The gradient is baked into
+  a 256x1 texture, so any number of stops costs the shader a single lookup. The last two
+  stops anchor where the outer glow rises.
 - **Animation**: pulse speed/depth, sine-to-heartbeat shape, beat punch, spin, hue cycle.
 - **Glitch Slices**: slice mix, count, x/y shift, stretch, skew, perspective (folded-panel
   tilt with directional shading), randomness, seed, edge shading, drift. By default the
