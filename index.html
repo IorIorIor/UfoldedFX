@@ -52,6 +52,28 @@
   }
   input.hex:focus { outline: none; border-color: var(--accent); }
 
+  #savedList {
+    display: none; margin: 0 0 10px; border: 1px solid var(--panel-border);
+    border-radius: 8px; overflow: hidden;
+  }
+  #savedList.open { display: block; }
+  .savedRow {
+    display: flex; align-items: center; gap: 6px; padding: 7px 8px;
+    border-bottom: 1px solid var(--panel-border);
+  }
+  .savedRow:last-child { border-bottom: none; }
+  .savedRow .name {
+    flex: 1; font-size: 11px; color: var(--text); cursor: pointer;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .savedRow .name:hover { color: var(--accent); }
+  .savedRow input.renameInput {
+    flex: 1; font-size: 11px; color: var(--text); background: rgba(255,255,255,0.06);
+    border: 1px solid var(--accent); border-radius: 4px; padding: 3px 6px; min-width: 0;
+  }
+  .savedRow button { flex: none; width: auto; padding: 3px 8px; font-size: 10px; }
+  #savedList .empty { padding: 10px 8px; font-size: 10px; color: var(--text-dim); }
+
   #quickBar {
     position: fixed; top: 16px; left: 16px; z-index: 5;
     width: 230px; color: var(--text);
@@ -104,6 +126,11 @@
     <button id="pause">Pause</button>
     <button id="savepng">Save PNG</button>
   </div>
+  <div class="btnrow">
+    <button id="saveSettings">Save Settings</button>
+    <button id="toggleSaved">Saved (0) ▾</button>
+  </div>
+  <div id="savedList"></div>
   <div id="groups"></div>
 </div>
 <div id="err"></div>
@@ -213,8 +240,6 @@ uniform float u_sliceMix, u_sliceCount, u_sliceOffX, u_sliceOffY, u_sliceZoom;
 uniform float u_sliceSeed, u_stripShade, u_shadeWidth, u_drift;
 uniform float u_sliceSkew, u_slicePersp, u_sliceRandom;
 uniform float u_chromAb, u_grain, u_vig, u_bright, u_contrast, u_sat;
-uniform float u_imageMix, u_imgAspect;
-uniform sampler2D u_image;
 uniform float u_shapeMix, u_nestMix;
 uniform sampler2D u_sdf;
 uniform sampler2D u_rad;
@@ -352,20 +377,6 @@ vec3 heartColor(vec2 uv){
   return c;
 }
 
-// procedural heart, optionally cross-faded with the loaded/baked image (cover fit)
-vec3 sceneColor(vec2 wuv){
-  vec3 c = heartColor(wuv);
-  if (u_imageMix > 0.001){
-    float ca = u_res.x / u_res.y;
-    vec2 t = vec2(wuv.x / ca, wuv.y) * 0.5;
-    if (u_imgAspect > ca) t.x *= ca / u_imgAspect;
-    else                  t.y *= u_imgAspect / ca;
-    vec3 ic = texture2D(u_image, clamp(t + 0.5, 0.0, 1.0)).rgb;
-    c = mix(c, ic, u_imageMix);
-  }
-  return c;
-}
-
 // vertical-strip glitch warp; also outputs per-strip edge shading
 vec3 render(vec2 uv, vec2 suv){
   float shade = 1.0;
@@ -430,7 +441,7 @@ vec3 render(vec2 uv, vec2 suv){
     sh *= 1.0 - 0.55 * clamp(tilt * lc * 2.0, 0.0, 1.0); // side tilted away goes dark
     shade = mix(1.0, sh, u_sliceMix);
   }
-  return sceneColor(wuv) * shade;
+  return heartColor(wuv) * shade;
 }
 
 void main(){
@@ -794,30 +805,6 @@ document.getElementById('gradDel').onclick = () => {
 };
 document.getElementById('gradReset').onclick = resetGradient;
 
-// image source: slice the shader over a loaded photo or a baked heart frame
-{
-  const det = document.createElement('details');
-  det.open = true;
-  det.innerHTML = `<summary>Image Source</summary>
-    <div class="btnrow">
-      <button id="loadImg">Load Image</button>
-      <button id="bakeImg">Bake Heart</button>
-      <button id="clearImg">Clear</button>
-    </div>
-    <input type="file" id="imgFile" accept="image/*" style="display:none">`;
-  state.imageMix = 1.0;
-  defaults.imageMix = 1.0;
-  const row = document.createElement('div');
-  row.className = 'ctl';
-  row.innerHTML = `<label>image mix</label><input type="range" min="0" max="1" step="0.01" value="1"><span class="val">1.00</span>`;
-  const input = row.querySelector('input');
-  const val = row.querySelector('.val');
-  input.addEventListener('input', () => { state.imageMix = +input.value; val.textContent = (+input.value).toFixed(2); });
-  inputs.imageMix = { input, show: v => { val.textContent = (+v).toFixed(2); } };
-  det.appendChild(row);
-  groupsEl.appendChild(det);
-}
-
 {
   const det = document.createElement('details');
   det.open = true;
@@ -843,6 +830,118 @@ function setParam(key, v){
   if (ui){ ui.input.value = v; ui.show(v); }
 }
 function applyValues(obj){ for (const k in obj) setParam(k, obj[k]); }
+
+// ------------------------------------------------------- saved settings
+// Synced to the Railway-hosted /api/presets endpoint when the app is
+// served by server.js; falls back to localStorage when run from file://
+// or when the server is unreachable, so saving still works standalone.
+const PRESETS_KEY = 'auraHeartPresets';
+let savedPresets = [];
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function loadLocalPresets(){
+  try { return JSON.parse(localStorage.getItem(PRESETS_KEY) || '[]'); }
+  catch { return []; }
+}
+
+async function fetchPresets(){
+  try {
+    const res = await fetch('/api/presets', { cache: 'no-store' });
+    if (!res.ok) throw new Error('bad status');
+    return await res.json();
+  } catch (e) {
+    return loadLocalPresets();
+  }
+}
+
+async function persistPresets(list){
+  try { localStorage.setItem(PRESETS_KEY, JSON.stringify(list)); } catch (e) {}
+  try {
+    const res = await fetch('/api/presets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(list),
+    });
+    if (!res.ok) throw new Error('bad status');
+  } catch (e) {
+    // offline or running from file:// — localStorage above already covers it
+  }
+}
+
+const savedListEl = document.getElementById('savedList');
+const toggleSavedBtn = document.getElementById('toggleSaved');
+
+function loadPreset(p){
+  if (p.state) for (const k in p.state) setParam(k, p.state[k]);
+  if (Array.isArray(p.gradStops) && p.gradStops.length >= 2){
+    gradStops = p.gradStops.map(s => ({ ...s }));
+    selStop = Math.min(selStop, gradStops.length - 1);
+    bakeGradient();
+    updateGradUI();
+  }
+}
+
+function renderSavedList(){
+  toggleSavedBtn.textContent = `Saved (${savedPresets.length}) ▾`;
+  savedListEl.innerHTML = '';
+  if (!savedPresets.length){
+    savedListEl.innerHTML = '<div class="empty">No saved settings yet</div>';
+    return;
+  }
+  for (const p of savedPresets){
+    const row = document.createElement('div');
+    row.className = 'savedRow';
+    row.innerHTML = `<span class="name" title="Click to load">${escapeHtml(p.name)}</span>
+      <button class="renameBtn" title="Rename">✎</button>
+      <button class="delBtn" title="Delete">✕</button>`;
+    row.querySelector('.name').addEventListener('click', () => loadPreset(p));
+    row.querySelector('.renameBtn').addEventListener('click', e => {
+      e.stopPropagation();
+      const nameEl = row.querySelector('.name');
+      const input = document.createElement('input');
+      input.className = 'renameInput';
+      input.value = p.name;
+      row.replaceChild(input, nameEl);
+      input.focus();
+      input.select();
+      const commit = () => {
+        const v = input.value.trim();
+        if (v) p.name = v;
+        renderSavedList();
+        persistPresets(savedPresets);
+      };
+      input.addEventListener('keydown', ev => { if (ev.key === 'Enter') input.blur(); });
+      input.addEventListener('blur', commit, { once: true });
+    });
+    row.querySelector('.delBtn').addEventListener('click', e => {
+      e.stopPropagation();
+      savedPresets = savedPresets.filter(x => x.id !== p.id);
+      renderSavedList();
+      persistPresets(savedPresets);
+    });
+    savedListEl.appendChild(row);
+  }
+}
+
+document.getElementById('saveSettings').onclick = async () => {
+  const preset = {
+    id: (crypto.randomUUID ? crypto.randomUUID() : 'p' + Date.now() + Math.random().toString(16).slice(2)),
+    name: `Setting ${savedPresets.length + 1}`,
+    state: { ...state },
+    gradStops: gradStops.map(s => ({ ...s })),
+  };
+  savedPresets.push(preset);
+  renderSavedList();
+  savedListEl.classList.add('open');
+  await persistPresets(savedPresets);
+};
+
+toggleSavedBtn.onclick = () => savedListEl.classList.toggle('open');
+
+fetchPresets().then(list => { savedPresets = list; renderSavedList(); });
 
 document.getElementById('reset').onclick = () => { applyValues(defaults); if (typeof resetGradient === 'function') resetGradient(); };
 document.getElementById('presetAura').onclick = () => applyValues({ ...defaults, ...PRESETS.aura });
@@ -894,61 +993,9 @@ function resize(){
 window.addEventListener('resize', resize);
 resize();
 
-// ---------------------------------------------------------------- image source
-let tex = null, hasImage = false, imgAspect = 1;
-gl.uniform1i(u('u_image'), 0);
 gl.uniform1i(u('u_grad'), 3);
 bakeGradient();
 updateGradUI();
-
-function ensureTex(){
-  if (!tex) tex = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-}
-
-function useLoadedImage(img, w, h){
-  if (!w || !h) return;
-  ensureTex();
-  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-  hasImage = true;
-  imgAspect = w / h;
-  setParam('imageMix', 1);
-}
-
-function loadImageFile(file){
-  if (!file || !file.type.startsWith('image/')) return;
-  const url = URL.createObjectURL(file);
-  const img = new Image();
-  img.onload = () => { useLoadedImage(img, img.naturalWidth, img.naturalHeight); URL.revokeObjectURL(url); };
-  img.src = url;
-}
-
-const imgFile = document.getElementById('imgFile');
-document.getElementById('loadImg').onclick = () => imgFile.click();
-imgFile.addEventListener('change', () => loadImageFile(imgFile.files[0]));
-window.addEventListener('dragover', e => e.preventDefault());
-window.addEventListener('drop', e => { e.preventDefault(); loadImageFile(e.dataTransfer.files[0]); });
-
-// freeze the current procedural heart into a still image, then slice that
-function bakeHeart(){
-  drawScene({ sliceMix: 0, imageMix: 0, chromAb: 0 });
-  if (!canvas.width || !canvas.height) return false; // layout not ready yet
-  ensureTex();
-  gl.copyTexImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 0, 0, canvas.width, canvas.height, 0);
-  hasImage = true;
-  imgAspect = canvas.width / canvas.height;
-  setParam('imageMix', 1);
-  return true;
-}
-document.getElementById('bakeImg').onclick = bakeHeart;
-
-document.getElementById('clearImg').onclick = () => { hasImage = false; };
 
 // ---------------------------------------------------------------- draw
 function drawScene(overrides){
@@ -957,12 +1004,10 @@ function drawScene(overrides){
   const t = (paused ? timeAcc : timeAcc + (performance.now() - t0) / 1000) % 3600;
   gl.uniform2f(u('u_res'), canvas.width, canvas.height);
   gl.uniform1f(u('u_time'), t);
-  gl.uniform1f(u('u_imgAspect'), imgAspect);
   gl.uniform1f(u('u_glowU0'), gradStops[gradStops.length - 2].p);
   gl.uniform1f(u('u_glowU1'), gradStops[gradStops.length - 1].p);
   for (const k in state){
-    let v = (overrides && k in overrides) ? overrides[k] : state[k];
-    if (k === 'imageMix' && !hasImage) v = 0;
+    const v = (overrides && k in overrides) ? overrides[k] : state[k];
     if (typeof v === 'number') gl.uniform1f(u('u_' + k), v);
     else gl.uniform3fv(u('u_' + k), hexToRgb(v));
   }

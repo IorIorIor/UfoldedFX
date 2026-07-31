@@ -1,0 +1,13 @@
+{
+  "name": "ufoldedfx",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Aura Heart FX — WebGL shader playground with server-synced saved settings",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

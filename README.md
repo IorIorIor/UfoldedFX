@@ -6,11 +6,18 @@ Everything is driven by sliders.
 
 ## Run it
 
-The whole app is a single dependency-free file. Either open `index.html` directly in a
+The app itself is still a single dependency-free `index.html` — open it directly in a
 browser, or serve it:
 
 ```sh
 npx serve .
+```
+
+For server-synced Saved Settings (see below), run the bundled zero-dependency Node
+server instead:
+
+```sh
+node server.js
 ```
 
 ## Controls
@@ -33,14 +40,42 @@ npx serve .
   slice pattern expands symmetrically from the centre of the screen (shift, stretch,
   skew and fold all grow outward, and central strips repeat the heart's notch);
   the `randomness` slider blends toward a fully random per-strip pattern driven by `seed`.
-- **Image Source**: the slice effect runs over an image by default — on startup the
-  procedural heart is baked into a still automatically. `Load Image` (or drag & drop a
-  file onto the page) replaces it with your own picture, `Bake Heart` re-freezes the
-  current procedural render, and `Clear` returns to the live procedural heart.
-  `image mix` cross-fades between procedural and image.
 - **Post FX**: chromatic aberration, grain, vignette, brightness, contrast, saturation.
 
 `Save PNG` exports the current frame.
+
+## Saved Settings
+
+`Save Settings` snapshots every slider, the gradient, and the glow color into a named
+entry in the `Saved (N) ▾` dropdown. Click an entry's name to load it, the pencil to
+rename it inline, and `✕` to delete it.
+
+Persistence is layered so the feature works whether or not a server is present:
+
+- If `server.js` is running (e.g. on Railway), saves sync to `GET`/`POST /api/presets`,
+  which the server persists to a `presets.json` file — shared across every browser/device
+  that opens the app.
+- If there's no server (opened via `file://`, or the request fails), saves fall back to
+  the browser's `localStorage` — still fully functional, just local to that browser.
+
+## Deploying to Railway
+
+The repo now includes `server.js` (Node core modules only, no npm dependencies) and a
+`package.json` with a `start` script, so Railway's default Node builder needs no extra
+configuration to run it — it detects `package.json`, runs `npm start`, and that runs
+`node server.js`, which serves `index.html` and the `/api/presets` endpoint on
+`process.env.PORT`.
+
+The one thing to set up in the Railway dashboard is **persistent storage**, since a
+Railway service's filesystem is ephemeral (wiped on every redeploy):
+
+1. Open the service → **Settings → Volumes** → **New Volume**.
+2. Mount it at `/data` (a small size is plenty — the presets file is a few KB).
+3. Add an environment variable `DATA_DIR` = `/data`.
+4. Redeploy.
+
+Without a volume, saved settings still work, but reset to empty on every redeploy —
+the app degrades gracefully to a fresh list rather than erroring.
 
 ## Android
 
