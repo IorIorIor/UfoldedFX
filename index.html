@@ -28,7 +28,6 @@
     scrollbar-width: thin;
     transition: transform 0.25s ease;
   }
-  #panel.hidden { transform: translateX(330px); }
   #panel h1 { font-size: 14px; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 4px; color: var(--accent); }
   #panel .sub { font-size: 10px; color: var(--text-dim); margin-bottom: 12px; }
 
@@ -72,13 +71,12 @@
     color: var(--text); font-size: 14px; display: flex; align-items: center; justify-content: center;
     transition: right 0.25s ease;
   }
-  #toggleUI.solo { right: 12px; }
+  #toggleUI.on { background: rgba(255, 77, 109, 0.35); border-color: var(--accent); }
   #err { position: fixed; left: 12px; bottom: 12px; color: #ff8080; font-size: 11px; white-space: pre-wrap; max-width: 60vw; }
 
   /* phone / Android WebView layout: panel becomes a bottom sheet */
   @media (max-width: 640px) {
     #panel { top: auto; left: 12px; right: 12px; bottom: 12px; width: auto; max-height: 55%; }
-    #panel.hidden { transform: translateY(120%); }
     #toggleUI { top: 12px; right: 12px; }
     input[type=range] { height: 28px; }
     input[type=range]::-webkit-slider-thumb { width: 16px; height: 16px; margin-top: -6.5px; }
@@ -88,8 +86,8 @@
 </head>
 <body>
 <canvas id="glcanvas"></canvas>
-<button id="toggleUI" class="solo" title="Toggle controls">☰</button>
-<div id="panel" class="hidden">
+<button id="toggleUI" title="Show more controls">☰</button>
+<div id="panel">
   <h1>Aura Heart FX</h1>
   <div class="sub">webgl shader playground — fiddle away</div>
   <div class="btnrow">
@@ -101,9 +99,6 @@
   <div class="btnrow">
     <button id="pause">Pause</button>
     <button id="savepng">Save PNG</button>
-  </div>
-  <div class="btnrow">
-    <button id="toggleAdvanced" style="flex:1 1 100%;">Show All Controls</button>
   </div>
   <div id="groups"></div>
 </div>
@@ -885,14 +880,9 @@ document.getElementById('savepng').onclick = () => {
 const panel = document.getElementById('panel');
 const toggle = document.getElementById('toggleUI');
 toggle.onclick = () => {
-  panel.classList.toggle('hidden');
-  toggle.classList.toggle('solo');
-};
-
-const toggleAdvanced = document.getElementById('toggleAdvanced');
-toggleAdvanced.onclick = () => {
   const on = panel.classList.toggle('showAdvanced');
-  toggleAdvanced.textContent = on ? 'Show Fewer Controls' : 'Show All Controls';
+  toggle.classList.toggle('on', on);
+  toggle.title = on ? 'Show fewer controls' : 'Show more controls';
 };
 
 // ---------------------------------------------------------------- render loop
