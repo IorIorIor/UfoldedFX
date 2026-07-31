@@ -17,7 +17,7 @@
   #glcanvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
 
   #panel {
-    position: fixed; top: 12px; right: 12px; bottom: 12px;
+    position: fixed; top: 60px; right: 12px; bottom: 12px;
     width: 300px; overflow-y: auto;
     background: var(--panel-bg);
     border: 1px solid var(--panel-border);
@@ -28,6 +28,7 @@
     scrollbar-width: thin;
     transition: transform 0.25s ease;
   }
+  #panel.hidden { transform: translateX(330px); }
   #panel h1 { font-size: 14px; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 4px; color: var(--accent); }
   #panel .sub { font-size: 10px; color: var(--text-dim); margin-bottom: 12px; }
 
@@ -51,10 +52,13 @@
   }
   input.hex:focus { outline: none; border-color: var(--accent); }
 
-  .advRow { display: none !important; }
-  .advGroup { display: none !important; }
-  #panel.showAdvanced .advRow { display: grid !important; }
-  #panel.showAdvanced .advGroup { display: block !important; }
+  #quickBar {
+    position: fixed; top: 16px; left: 16px; z-index: 5;
+    width: 230px; color: var(--text);
+  }
+  #quickBar .ctl label, #quickBar .ctl .val {
+    text-shadow: 0 1px 4px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.7);
+  }
 
   .btnrow { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
   button {
@@ -65,11 +69,10 @@
   button:hover { background: rgba(255, 77, 109, 0.25); border-color: var(--accent); }
 
   #toggleUI {
-    position: fixed; top: 12px; right: 324px; z-index: 10;
+    position: fixed; top: 12px; right: 12px; z-index: 10;
     width: 34px; height: 34px; flex: none;
     background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 8px;
     color: var(--text); font-size: 14px; display: flex; align-items: center; justify-content: center;
-    transition: right 0.25s ease;
   }
   #toggleUI.on { background: rgba(255, 77, 109, 0.35); border-color: var(--accent); }
   #err { position: fixed; left: 12px; bottom: 12px; color: #ff8080; font-size: 11px; white-space: pre-wrap; max-width: 60vw; }
@@ -77,7 +80,7 @@
   /* phone / Android WebView layout: panel becomes a bottom sheet */
   @media (max-width: 640px) {
     #panel { top: auto; left: 12px; right: 12px; bottom: 12px; width: auto; max-height: 55%; }
-    #toggleUI { top: 12px; right: 12px; }
+    #quickBar { width: min(70vw, 260px); }
     input[type=range] { height: 28px; }
     input[type=range]::-webkit-slider-thumb { width: 16px; height: 16px; margin-top: -6.5px; }
     input[type=range]::-moz-range-thumb { width: 16px; height: 16px; }
@@ -87,7 +90,8 @@
 <body>
 <canvas id="glcanvas"></canvas>
 <button id="toggleUI" title="Show more controls">☰</button>
-<div id="panel">
+<div id="quickBar"></div>
+<div id="panel" class="hidden">
   <h1>Aura Heart FX</h1>
   <div class="sub">webgl shader playground — fiddle away</div>
   <div class="btnrow">
@@ -588,23 +592,20 @@ function hexToRgb(hex){
 }
 
 const groupsEl = document.getElementById('groups');
+const quickBar = document.getElementById('quickBar');
 
-// only these stay visible by default; everything else lives behind
-// the "Show All Controls" toggle
+// these live in the always-visible, unstyled quick bar instead of a panel group
 const BASIC_KEYS = new Set(['scale', 'soft', 'spread', 'sliceMix', 'sliceCount']);
 
 for (const [title, items] of GROUPS){
   const det = document.createElement('details');
   det.open = true;
   det.innerHTML = `<summary>${title}</summary>`;
-  let groupHasBasic = false;
   for (const [key, label, min, max, step, def] of items){
     state[key] = def;
     defaults[key] = def;
     const row = document.createElement('div');
     row.className = 'ctl';
-    if (BASIC_KEYS.has(key)) groupHasBasic = true;
-    else row.classList.add('advRow');
     row.innerHTML = `<label>${label}</label><input type="range" min="${min}" max="${max}" step="${step}" value="${def}"><span class="val"></span>`;
     const input = row.querySelector('input');
     const val = row.querySelector('.val');
@@ -612,9 +613,8 @@ for (const [title, items] of GROUPS){
     show(def);
     input.addEventListener('input', () => { state[key] = +input.value; show(input.value); });
     inputs[key] = { input, show };
-    det.appendChild(row);
+    (BASIC_KEYS.has(key) ? quickBar : det).appendChild(row);
   }
-  if (!groupHasBasic) det.classList.add('advGroup');
   groupsEl.appendChild(det);
 }
 
@@ -624,7 +624,6 @@ let selStop = 1, gradTex = null, bakedSoft = -1;
 
 const gradDet = document.createElement('details');
 gradDet.open = true;
-gradDet.classList.add('advGroup');
 gradDet.innerHTML = `<summary>Gradient</summary>
   <div id="gradWrap" style="position:relative; margin:10px 0 22px;">
     <canvas id="gradBar" width="256" height="1"
@@ -799,7 +798,6 @@ document.getElementById('gradReset').onclick = resetGradient;
 {
   const det = document.createElement('details');
   det.open = true;
-  det.classList.add('advGroup');
   det.innerHTML = `<summary>Image Source</summary>
     <div class="btnrow">
       <button id="loadImg">Load Image</button>
@@ -823,7 +821,6 @@ document.getElementById('gradReset').onclick = resetGradient;
 {
   const det = document.createElement('details');
   det.open = true;
-  det.classList.add('advGroup');
   det.innerHTML = '<summary>Colors</summary>';
   for (const [key, label, def] of COLORS){
     state[key] = def;
@@ -880,9 +877,9 @@ document.getElementById('savepng').onclick = () => {
 const panel = document.getElementById('panel');
 const toggle = document.getElementById('toggleUI');
 toggle.onclick = () => {
-  const on = panel.classList.toggle('showAdvanced');
+  const on = !panel.classList.toggle('hidden');
   toggle.classList.toggle('on', on);
-  toggle.title = on ? 'Show fewer controls' : 'Show more controls';
+  toggle.title = on ? 'Hide more controls' : 'Show more controls';
 };
 
 // ---------------------------------------------------------------- render loop
