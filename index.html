@@ -83,8 +83,8 @@
 </head>
 <body>
 <canvas id="glcanvas"></canvas>
-<button id="toggleUI" title="Toggle controls">☰</button>
-<div id="panel">
+<button id="toggleUI" class="solo" title="Toggle controls">☰</button>
+<div id="panel" class="hidden">
   <h1>Aura Heart FX</h1>
   <div class="sub">webgl shader playground — fiddle away</div>
   <div class="btnrow">
@@ -108,7 +108,7 @@
 // [key, label, min, max, step, default]
 const GROUPS = [
   ['Heart Shape', [
-    ['scale',      'size',        0.2,  2.5,  0.01, 0.78],
+    ['scale',      'size',        0.2,  2.5,  0.01, 0.91],
     ['posX',       'center x',   -1.0,  1.0,  0.01, 0.0],
     ['posY',       'center y',   -1.0,  1.0,  0.01, 0.0],
     ['stretchX',   'width',       0.4,  2.0,  0.01, 1.0],
@@ -119,41 +119,41 @@ const GROUPS = [
   ]],
   ['Color Bands', [
     ['nestMix',    'nested↔offset', 0.0, 1.0, 0.01, 0.0],
-    ['spread',     'band spread', 0.3,  2.5,  0.01, 1.0],
-    ['bandOff',    'band shift', -0.5,  0.5,  0.01, 0.0],
-    ['spaceExp',   'band curve',  0.4,  2.5,  0.01, 1.0],
+    ['spread',     'band spread', 0.3,  2.5,  0.01, 0.68],
+    ['bandOff',    'band shift', -0.5,  0.5,  0.01, -0.07],
+    ['spaceExp',   'band curve',  0.4,  2.5,  0.01, 0.92],
     ['soft',       'blur',        0.01, 0.5,  0.005, 0.09],
-    ['glowStr',    'glow amount', 0.0,  2.0,  0.01, 0.55],
-    ['glowFall',   'glow reach',  0.05, 1.0,  0.01, 0.28],
+    ['glowStr',    'glow amount', 0.0,  2.0,  0.01, 0.69],
+    ['glowFall',   'glow reach',  0.05, 1.0,  0.01, 0.29],
   ]],
   ['Animation', [
-    ['pulseSpeed', 'pulse speed', 0.0,  3.0,  0.01, 0.9],
-    ['pulseAmt',   'pulse depth', 0.0,  0.35, 0.005, 0.05],
-    ['pulseShape', 'sine↔beat',   0.0,  1.0,  0.01, 1.0],
-    ['beatSharp',  'beat punch',  3,   40,    0.5,  14],
+    ['pulseSpeed', 'pulse speed', 0.0,  3.0,  0.01, 0.52],
+    ['pulseAmt',   'pulse depth', 0.0,  0.35, 0.005, 0.06],
+    ['pulseShape', 'sine↔beat',   0.0,  1.0,  0.01, 0.19],
+    ['beatSharp',  'beat punch',  3,   40,    0.5,  12],
     ['spin',       'spin speed', -1.0,  1.0,  0.01, 0.0],
     ['hueCycle',   'hue cycle',  -1.0,  1.0,  0.01, 0.0],
   ]],
   ['Glitch Slices', [
-    ['sliceMix',   'slice mix',   0.0,  1.0,  0.01, 0.0],
-    ['sliceCount', 'slice count', 2,   80,    1,    16],
-    ['sliceOffX',  'shift x',     0.0,  0.6,  0.005, 0.08],
-    ['sliceOffY',  'shift y',     0.0,  0.6,  0.005, 0.04],
-    ['sliceZoom',  'stretch',     0.0,  1.0,  0.01, 0.2],
-    ['sliceSkew',  'skew',        0.0,  1.0,  0.01, 0.15],
-    ['slicePersp', 'perspective', 0.0,  1.0,  0.01, 0.25],
+    ['sliceMix',   'slice mix',   0.0,  1.0,  0.01, 1.0],
+    ['sliceCount', 'slice count', 2,   80,    1,    29],
+    ['sliceOffX',  'shift x',     0.0,  0.6,  0.005, 0.225],
+    ['sliceOffY',  'shift y',     0.0,  0.6,  0.005, 0.0],
+    ['sliceZoom',  'stretch',     0.0,  1.0,  0.01, 0.0],
+    ['sliceSkew',  'skew',        0.0,  1.0,  0.01, 0.04],
+    ['slicePersp', 'perspective', 0.0,  1.0,  0.01, 0.0],
     ['sliceRandom','randomness',  0.0,  1.0,  0.01, 0.0],
-    ['sliceSeed',  'seed',        0,  100,    1,    7],
-    ['stripShade', 'edge shade',  0.0,  1.0,  0.01, 0.65],
-    ['shadeWidth', 'shade width', 0.0,  1.0,  0.01, 0.5],
-    ['drift',      'drift speed', 0.0,  2.0,  0.01, 0.25],
+    ['sliceSeed',  'seed',        0,  100,    1,    0],
+    ['stripShade', 'edge shade',  0.0,  1.0,  0.01, 0.0],
+    ['shadeWidth', 'shade width', 0.0,  1.0,  0.01, 0.0],
+    ['drift',      'drift speed', 0.0,  2.0,  0.01, 0.0],
   ]],
   ['Post FX', [
     ['chromAb',    'chroma split',0.0,  0.03, 0.0005, 0.0],
-    ['grain',      'grain',       0.0,  0.3,  0.005, 0.04],
-    ['vig',        'vignette',    0.0,  1.0,  0.01, 0.35],
+    ['grain',      'grain',       0.0,  0.3,  0.005, 0.08],
+    ['vig',        'vignette',    0.0,  1.0,  0.01, 1.0],
     ['bright',     'brightness',  0.4,  1.6,  0.01, 1.0],
-    ['contrast',   'contrast',    0.4,  1.6,  0.01, 1.05],
+    ['contrast',   'contrast',    0.4,  1.6,  0.01, 1.07],
     ['sat',        'saturation',  0.0,  2.0,  0.01, 1.1],
   ]],
 ];
@@ -166,12 +166,13 @@ const COLORS = [
 // gradient stops over the band domain (0 = deep core, 1 = far background);
 // each stop is where its color takes over, softened by the blur slider
 const DEFAULT_STOPS = [
-  { p: 0.00,  c: '#54061f' },  // core
-  { p: 0.228, c: '#2f7dff' },  // blue
-  { p: 0.328, c: '#ff2038' },  // red
-  { p: 0.416, c: '#ff8f76' },  // salmon
-  { p: 0.512, c: '#f8c4ce' },  // pale pink
-  { p: 0.78,  c: '#20102f' },  // background
+  { p: 0.004, c: '#510125' },  // core
+  { p: 0.212, c: '#2377fb' },  // blue
+  { p: 0.302, c: '#ef56bb' },  // magenta
+  { p: 0.401, c: '#fc2f42' },  // red
+  { p: 0.508, c: '#fc9ca5' },  // pink
+  { p: 0.655, c: '#9160e6' },  // violet
+  { p: 0.736, c: '#1f072a' },  // background
 ];
 
 const PRESETS = {
