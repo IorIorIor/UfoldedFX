@@ -17,7 +17,7 @@
   #glcanvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
 
   #panel {
-    position: fixed; top: 60px; right: 12px; bottom: 12px;
+    position: fixed; top: 232px; right: 12px; bottom: 12px;
     width: 300px; overflow-y: auto;
     background: var(--panel-bg);
     border: 1px solid var(--panel-border);
@@ -29,8 +29,6 @@
     transition: transform 0.25s ease;
   }
   #panel.hidden { transform: translateX(330px); }
-  #panel h1 { font-size: 14px; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 4px; color: var(--accent); }
-  #panel .sub { font-size: 10px; color: var(--text-dim); margin-bottom: 12px; }
 
   details { margin-bottom: 8px; border: 1px solid var(--panel-border); border-radius: 8px; padding: 6px 8px; }
   details summary { cursor: pointer; font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text); padding: 4px 0; user-select: none; }
@@ -74,8 +72,8 @@
   .savedRow button { flex: none; width: auto; padding: 3px 8px; font-size: 10px; }
   #savedList .empty { padding: 10px 8px; font-size: 10px; color: var(--text-dim); }
 
-  #quickBar {
-    position: fixed; top: 16px; left: 16px; z-index: 5;
+  #quickPanel {
+    position: fixed; top: 16px; right: 12px; z-index: 5;
     width: 230px; color: var(--text);
   }
   #quickBar .ctl label, #quickBar .ctl .val {
@@ -91,10 +89,7 @@
   button:hover { background: rgba(255, 77, 109, 0.25); border-color: var(--accent); }
 
   #toggleUI {
-    position: fixed; top: 12px; right: 12px; z-index: 10;
-    width: 34px; height: 34px; flex: none;
-    background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 8px;
-    color: var(--text); font-size: 14px; display: flex; align-items: center; justify-content: center;
+    display: block; width: 100%; margin-top: 10px;
   }
   #toggleUI.on { background: rgba(255, 77, 109, 0.35); border-color: var(--accent); }
   #err { position: fixed; left: 12px; bottom: 12px; color: #ff8080; font-size: 11px; white-space: pre-wrap; max-width: 60vw; }
@@ -102,7 +97,7 @@
   /* phone / Android WebView layout: panel becomes a bottom sheet */
   @media (max-width: 640px) {
     #panel { top: auto; left: 12px; right: 12px; bottom: 12px; width: auto; max-height: 55%; }
-    #quickBar { width: min(70vw, 260px); }
+    #quickPanel { width: min(70vw, 260px); }
     input[type=range] { height: 28px; }
     input[type=range]::-webkit-slider-thumb { width: 16px; height: 16px; margin-top: -6.5px; }
     input[type=range]::-moz-range-thumb { width: 16px; height: 16px; }
@@ -111,17 +106,11 @@
 </head>
 <body>
 <canvas id="glcanvas"></canvas>
-<button id="toggleUI" title="Show more controls">☰</button>
-<div id="quickBar"></div>
+<div id="quickPanel">
+  <div id="quickBar"></div>
+  <button id="toggleUI" title="Show more controls">All Settings</button>
+</div>
 <div id="panel" class="hidden">
-  <h1>Aura Heart FX</h1>
-  <div class="sub">webgl shader playground — fiddle away</div>
-  <div class="btnrow">
-    <button id="presetAura">Aura</button>
-    <button id="presetSliced">Sliced</button>
-    <button id="randomize">Random</button>
-    <button id="reset">Reset</button>
-  </div>
   <div class="btnrow">
     <button id="pause">Pause</button>
     <button id="savepng">Save PNG</button>
@@ -208,14 +197,6 @@ const DEFAULT_STOPS = [
   { p: 0.655, c: '#9160e6' },  // violet
   { p: 0.736, c: '#1f072a' },  // background
 ];
-
-const PRESETS = {
-  aura:   { sliceMix: 0.0, chromAb: 0.0, soft: 0.09, pulseAmt: 0.05 },
-  sliced: { sliceMix: 1.0, sliceCount: 16, sliceOffX: 0.2, sliceOffY: 0.05,
-            sliceZoom: 0.3, sliceSkew: 0.25, slicePersp: 0.4, sliceRandom: 0.08,
-            stripShade: 0.5, shadeWidth: 0.3, chromAb: 0.002,
-            drift: 0.25, soft: 0.09 },
-};
 
 // ---------------------------------------------------------------- shaders
 const VERT = `
@@ -942,21 +923,6 @@ document.getElementById('saveSettings').onclick = async () => {
 toggleSavedBtn.onclick = () => savedListEl.classList.toggle('open');
 
 fetchPresets().then(list => { savedPresets = list; renderSavedList(); });
-
-document.getElementById('reset').onclick = () => { applyValues(defaults); if (typeof resetGradient === 'function') resetGradient(); };
-document.getElementById('presetAura').onclick = () => applyValues({ ...defaults, ...PRESETS.aura });
-document.getElementById('presetSliced').onclick = () => applyValues({ ...defaults, ...PRESETS.sliced });
-
-document.getElementById('randomize').onclick = () => {
-  const r = (a, b) => a + Math.random() * (b - a);
-  applyValues({
-    sliceMix: r(0.5, 1), sliceCount: Math.round(r(5, 40)), sliceSeed: Math.round(r(0, 100)),
-    sliceOffX: r(0.02, 0.3), sliceOffY: r(0, 0.15), sliceZoom: r(0.1, 0.8),
-    sliceSkew: r(0, 0.6), slicePersp: r(0, 0.7), sliceRandom: r(0, 1),
-    stripShade: r(0.3, 0.9), drift: r(0, 1),
-    rot: Math.round(r(-25, 25)), spaceExp: r(0.7, 1.6), soft: r(0.06, 0.25),
-  });
-};
 
 let paused = false, t0 = performance.now(), timeAcc = 0;
 document.getElementById('pause').onclick = e => {

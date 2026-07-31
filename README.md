@@ -22,8 +22,10 @@ node server.js
 
 ## Controls
 
-- **Presets**: `Aura` (clean layered heart) and `Sliced` (vertical-strip glitch), plus
-  `Random` and `Reset`.
+Five sliders — size, band spread, blur, slice mix, slice count — sit unstyled in the
+top-right corner and are always visible. The `All Settings` button beneath them opens the
+full panel with everything else:
+
 - **Heart Shape**: size, position, width/height stretch, rotation, roundness, and an
   `svg↔classic` blend. The default silhouette is a signed-distance field baked at startup
   from a polygon sampled off the reference heart SVG (embedded in the file — still zero
