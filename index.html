@@ -209,7 +209,11 @@ uniform float u_time;
 
 uniform float u_scale, u_posX, u_posY, u_stretchX, u_stretchY, u_rot, u_round;
 uniform float u_spread, u_bandOff, u_spaceExp, u_soft, u_glowStr, u_glowFall;
-uniform float u_pulseSpeed, u_pulseAmt, u_pulseShape, u_beatSharp, u_spin, u_hueCycle;
+uniform float u_pulseAmt, u_pulseShape, u_beatSharp;
+// phases are integrated on the CPU (phase += speed * dt) so that animating
+// a speed slider changes the rate of motion, never the current phase —
+// computing fract(time * speed) here would jump wildly while speed tweens
+uniform float u_pulsePhase, u_spinPhase, u_huePhase, u_driftPhase;
 uniform float u_sliceMix, u_sliceOffX, u_sliceOffY, u_sliceZoom, u_sliceSpaceFrac;
 uniform float u_sliceSeed, u_stripShade, u_shadeWidth, u_drift;
 uniform float u_sliceSkew, u_slicePersp, u_sliceRandom;
@@ -309,7 +313,7 @@ float gauss(float x, float c, float w){
 
 // heartbeat curve: sine blended toward a double-thump
 float pulse(){
-  float t = fract(u_time * u_pulseSpeed);
+  float t = fract(u_pulsePhase);
   float sine = 0.5 + 0.5 * sin(6.2831853 * t);
   float beat = gauss(t, 0.12, u_beatSharp) + 0.55 * gauss(t, 0.34, u_beatSharp * 1.1);
   return mix(sine, min(beat, 1.0), u_pulseShape);
@@ -325,7 +329,7 @@ vec3 hueRotate(vec3 c, float a){
 // nested-heart gradient at aspect-corrected screen point uv
 vec3 heartColor(vec2 uv){
   vec2 p = uv - vec2(u_posX, u_posY);
-  float ang = radians(u_rot) + u_time * u_spin;
+  float ang = radians(u_rot) + u_spinPhase;
   float ca = cos(ang), sa = sin(ang);
   p = vec2(ca * p.x - sa * p.y, sa * p.x + ca * p.y);
 
@@ -387,8 +391,8 @@ vec3 sliceLayer(vec2 uv, vec2 suv){
     float h4 = hash(rank * 5.21 + u_sliceSeed * 1.31 + 41.0);
     float h5 = hash(rank * 6.53 + u_sliceSeed * 0.57 + 53.0);
 
-    float dr = sin(u_time * u_drift * 2.0 + rank * 1.71);
-    float dc2 = cos(u_time * u_drift * 1.6 + rank * 2.39);
+    float dr = sin(u_driftPhase * 2.0 + rank * 1.71);
+    float dc2 = cos(u_driftPhase * 1.6 + rank * 2.39);
 
     float alt = mod(rank, 2.0) * 2.0 - 1.0;         // alternating fold direction
     float r = clamp(u_sliceRandom, 0.0, 1.0) * gate;
@@ -451,7 +455,7 @@ void main(){
     col = render(uv, suv);
   }
 
-  if (abs(u_hueCycle) > 0.001) col = hueRotate(col, u_time * u_hueCycle * 2.0);
+  if (abs(u_huePhase) > 0.0001) col = hueRotate(col, u_huePhase);
 
   // grade
   float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
@@ -671,20 +675,30 @@ function smoothstepJs(a, b, x){
   return t * t * (3 - 2 * t);
 }
 
-function bakeGradient(){
-  bakedSoft = state.soft;
+// render any stop list into a 256-pixel colour ramp
+function computeRamp(stops, soft){
   const W = 256, arr = new Uint8ClampedArray(W * 4);
-  const rgbs = gradStops.map(s => hexToRgb(s.c));
-  const softU = Math.max(state.soft / 1.25, 0.004);
+  const rgbs = stops.map(s => hexToRgb(s.c));
+  const softU = Math.max(soft / 1.25, 0.004);
   for (let x = 0; x < W; x++){
     const u = (x + 0.5) / W;
     let c = rgbs[0].slice();
-    for (let i = 1; i < gradStops.length; i++){
-      const m = smoothstepJs(gradStops[i].p - softU, gradStops[i].p + softU, u);
+    for (let i = 1; i < stops.length; i++){
+      const m = smoothstepJs(stops[i].p - softU, stops[i].p + softU, u);
       c = [c[0] + (rgbs[i][0] - c[0]) * m, c[1] + (rgbs[i][1] - c[1]) * m, c[2] + (rgbs[i][2] - c[2]) * m];
     }
     arr[x*4] = c[0]*255; arr[x*4+1] = c[1]*255; arr[x*4+2] = c[2]*255; arr[x*4+3] = 255;
   }
+  return arr;
+}
+
+// lastRamp always holds the ramp currently on screen, so a state animation
+// can crossfade from exactly what is visible, whatever produced it
+let lastRamp = null;
+let glowOverride = null;
+
+function uploadRamp(arr){
+  lastRamp = arr;
   if (!gradTex) gradTex = gl.createTexture();
   gl.activeTexture(gl.TEXTURE3);
   gl.bindTexture(gl.TEXTURE_2D, gradTex);
@@ -695,7 +709,12 @@ function bakeGradient(){
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(arr.buffer));
   gl.activeTexture(gl.TEXTURE0);
   const bar = document.getElementById('gradBar');
-  bar.getContext('2d').putImageData(new ImageData(arr, W, 1), 0, 0);
+  bar.getContext('2d').putImageData(new ImageData(arr, 256, 1), 0, 0);
+}
+
+function bakeGradient(){
+  bakedSoft = state.soft;
+  uploadRamp(computeRamp(gradStops, state.soft));
 }
 
 function sampleGradientHex(u){
@@ -900,19 +919,20 @@ function animateToState(p, duration = 1400){
     else if (typeof fromState[k] === 'string' && typeof toStateSrc[k] === 'string') hexKeys.push(k);
   }
 
-  // pad the shorter gradient to match stop counts so indices line up,
-  // then rebuild the handle DOM once up front (cheap per-frame after that)
-  const hasGrad = Array.isArray(p.gradStops) && p.gradStops.length >= 2;
-  let fromPad, toPad, finalStops;
+  // The gradient crossfades in ramp space: capture the 256-pixel ramp that
+  // is on screen right now and blend it pixel-wise toward the target's
+  // ramp. That is exact for any combination of stop counts (no stop
+  // pairing/padding), and if this tween interrupts another one it starts
+  // from precisely what is visible. gradStops/the handles stay untouched
+  // until the tween lands, then snap to the target's real stops.
+  const hasGrad = Array.isArray(p.gradStops) && p.gradStops.length >= 2 && lastRamp;
+  let fromRamp, toStops, fromGlow, toGlow;
   if (hasGrad){
-    finalStops = p.gradStops.map(s => ({ ...s }));
-    const n = Math.max(gradStops.length, finalStops.length);
-    fromPad = gradStops.map(s => ({ ...s }));
-    while (fromPad.length < n) fromPad.push({ ...fromPad[fromPad.length - 1] });
-    toPad = finalStops.map(s => ({ ...s }));
-    while (toPad.length < n) toPad.push({ ...toPad[toPad.length - 1] });
-    gradStops = fromPad.map(s => ({ ...s }));
-    updateGradUI();
+    fromRamp = lastRamp.slice();
+    toStops = p.gradStops.map(s => ({ ...s }));
+    const cur = glowOverride || [gradStops[gradStops.length - 2].p, gradStops[gradStops.length - 1].p];
+    fromGlow = [cur[0], cur[1]];
+    toGlow = [toStops[toStops.length - 2].p, toStops[toStops.length - 1].p];
   }
 
   const start = performance.now();
@@ -925,20 +945,25 @@ function animateToState(p, duration = 1400){
     for (const k of hexKeys) setParam(k, lerpHex(fromState[k], toStateSrc[k], e));
 
     if (hasGrad){
-      gradStops = fromPad.map((s, i) => ({
-        p: s.p + (toPad[i].p - s.p) * e,
-        c: lerpHex(s.c, toPad[i].c, e),
-      }));
-      bakeGradient();
-      const handles = document.getElementById('gradHandles').children;
-      gradStops.forEach((s, i) => { if (handles[i]) styleHandle(handles[i], i); });
+      const toRamp = computeRamp(toStops, state.soft);
+      const blended = new Uint8ClampedArray(fromRamp.length);
+      for (let i = 0; i < blended.length; i++){
+        blended[i] = fromRamp[i] + (toRamp[i] - fromRamp[i]) * e;
+      }
+      uploadRamp(blended);
+      bakedSoft = state.soft; // keep drawScene from re-baking over the blend
+      glowOverride = [
+        fromGlow[0] + (toGlow[0] - fromGlow[0]) * e,
+        fromGlow[1] + (toGlow[1] - fromGlow[1]) * e,
+      ];
     }
 
     if (t < 1){
       requestAnimationFrame(frame);
     } else if (hasGrad){
-      gradStops = finalStops; // drop the padding duplicates now that we've landed
+      gradStops = toStops;
       selStop = Math.min(selStop, gradStops.length - 1);
+      glowOverride = null;
       bakeGradient();
       updateGradUI();
     }
@@ -1044,6 +1069,30 @@ gl.uniform1i(u('u_grad'), 3);
 bakeGradient();
 updateGradUI();
 
+// ------------------------------------------------- animation phase clocks
+// Each time-driven effect owns an accumulated phase advanced by speed * dt.
+// Animating a speed slider then changes only how fast the phase advances —
+// never the phase itself — so state transitions can't make motion jitter.
+let pulsePhase = 0, spinPhase = 0, huePhase = 0, driftPhase = 0;
+let lastTick = performance.now();
+
+function wrapAngle(a){ return Math.atan2(Math.sin(a), Math.cos(a)); }
+
+function advancePhases(){
+  const now = performance.now();
+  const dt = Math.min((now - lastTick) / 1000, 0.1);
+  lastTick = now;
+  if (paused) return;
+  pulsePhase = (pulsePhase + state.pulseSpeed * dt) % 1000;
+  driftPhase = (driftPhase + state.drift * dt) % 1000;
+  spinPhase += state.spin * dt;
+  huePhase += state.hueCycle * 2.0 * dt;
+  // when a speed sits at zero, ease its residual phase back to identity so
+  // the visual returns to the saved state's true appearance
+  if (Math.abs(state.spin) < 0.001) spinPhase -= wrapAngle(spinPhase) * Math.min(3 * dt, 1);
+  if (Math.abs(state.hueCycle) < 0.001) huePhase -= wrapAngle(huePhase) * Math.min(3 * dt, 1);
+}
+
 // ---------------------------------------------------------------- draw
 function drawScene(overrides){
   resize();
@@ -1051,8 +1100,13 @@ function drawScene(overrides){
   const t = (paused ? timeAcc : timeAcc + (performance.now() - t0) / 1000) % 3600;
   gl.uniform2f(u('u_res'), canvas.width, canvas.height);
   gl.uniform1f(u('u_time'), t);
-  gl.uniform1f(u('u_glowU0'), gradStops[gradStops.length - 2].p);
-  gl.uniform1f(u('u_glowU1'), gradStops[gradStops.length - 1].p);
+  gl.uniform1f(u('u_pulsePhase'), pulsePhase);
+  gl.uniform1f(u('u_spinPhase'), spinPhase);
+  gl.uniform1f(u('u_huePhase'), huePhase);
+  gl.uniform1f(u('u_driftPhase'), driftPhase);
+  const ga = glowOverride || [gradStops[gradStops.length - 2].p, gradStops[gradStops.length - 1].p];
+  gl.uniform1f(u('u_glowU0'), ga[0]);
+  gl.uniform1f(u('u_glowU1'), ga[1]);
   for (const k in state){
     const v = (overrides && k in overrides) ? overrides[k] : state[k];
     if (k === 'sliceSpace'){
@@ -1066,6 +1120,7 @@ function drawScene(overrides){
 }
 
 function frame(){
+  advancePhases();
   drawScene();
   requestAnimationFrame(frame);
 }
