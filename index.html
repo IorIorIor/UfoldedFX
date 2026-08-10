@@ -54,6 +54,15 @@
   }
   input.hex:focus { outline: none; border-color: var(--accent); }
 
+  #statesIO {
+    display: none; width: 100%; height: 110px; margin: 6px 0; resize: vertical;
+    font: 10px/1.4 ui-monospace, Menlo, Consolas, monospace; color: var(--text);
+    background: rgba(0,0,0,0.45); border: 1px solid var(--panel-border);
+    border-radius: 6px; padding: 6px;
+  }
+  #statesIO.open { display: block; }
+  #statesIO:focus { outline: none; border-color: var(--accent); }
+
   #savedList { display: none; margin: 0 0 10px; }
   #savedList.open { display: block; }
   .savedRow {
@@ -111,6 +120,11 @@
       <button id="saveSettings">Save State</button>
       <button id="toggleSaved">States (0) ▾</button>
     </div>
+    <div class="btnrow">
+      <button id="exportStates">Export</button>
+      <button id="importStates">Import</button>
+    </div>
+    <textarea id="statesIO" spellcheck="false"></textarea>
     <div id="savedList"></div>
     <div id="groups"></div>
   </div>
@@ -1027,6 +1041,40 @@ document.getElementById('saveSettings').onclick = async () => {
 };
 
 toggleSavedBtn.onclick = () => savedListEl.classList.toggle('open');
+
+// export/import the saved states as JSON — the export format is exactly
+// what android/states.json and the /api/presets endpoint use
+const statesIO = document.getElementById('statesIO');
+document.getElementById('exportStates').onclick = () => {
+  statesIO.classList.add('open');
+  statesIO.value = JSON.stringify(savedPresets, null, 2);
+  statesIO.focus();
+  statesIO.select();
+  if (navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(statesIO.value).catch(() => {});
+  }
+};
+document.getElementById('importStates').onclick = () => {
+  if (!statesIO.classList.contains('open') || !statesIO.value.trim()){
+    statesIO.classList.add('open');
+    statesIO.value = '';
+    statesIO.placeholder = 'paste states JSON here, then press Import again';
+    statesIO.focus();
+    return;
+  }
+  try {
+    const list = JSON.parse(statesIO.value);
+    if (!Array.isArray(list)) throw new Error('expected an array');
+    savedPresets = list;
+    renderSavedList();
+    savedListEl.classList.add('open');
+    persistPresets(savedPresets);
+    statesIO.classList.remove('open');
+  } catch (e) {
+    statesIO.value = '';
+    statesIO.placeholder = 'invalid JSON — paste the exported states array';
+  }
+};
 
 fetchPresets().then(list => { savedPresets = list; renderSavedList(); });
 
