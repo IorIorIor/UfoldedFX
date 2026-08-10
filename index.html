@@ -152,8 +152,7 @@ const GROUPS = [
   ]],
   ['Glitch Slices', [
     ['sliceMix',   'slice mix',   0.0,  1.0,  0.01, 1.0],
-    ['sliceCount', 'slice count', 0,   80,    1,    29],
-    ['sliceOffX',  'shift x',     0.0,  0.6,  0.005, 0.225],
+    ['sliceSpace', 'space',       0,    100,  1,    10],
     ['sliceOffY',  'shift y',     0.0,  0.6,  0.005, 0.0],
     ['sliceZoom',  'stretch',     0.0,  1.0,  0.01, 0.0],
     ['sliceSkew',  'skew',        0.0,  1.0,  0.01, 0.04],
@@ -210,7 +209,7 @@ uniform float u_time;
 uniform float u_scale, u_posX, u_posY, u_stretchX, u_stretchY, u_rot, u_round;
 uniform float u_spread, u_bandOff, u_spaceExp, u_soft, u_glowStr, u_glowFall;
 uniform float u_pulseSpeed, u_pulseAmt, u_pulseShape, u_beatSharp, u_spin, u_hueCycle;
-uniform float u_sliceMix, u_sliceCount, u_sliceOffX, u_sliceOffY, u_sliceZoom;
+uniform float u_sliceMix, u_sliceOffX, u_sliceOffY, u_sliceZoom;
 uniform float u_sliceSeed, u_stripShade, u_shadeWidth, u_drift;
 uniform float u_sliceSkew, u_slicePersp, u_sliceRandom;
 uniform float u_chromAb, u_grain, u_vig, u_bright, u_contrast, u_sat;
@@ -352,14 +351,20 @@ vec3 heartColor(vec2 uv){
 }
 
 // vertical-strip glitch warp for a specific (integer) strip count; also
-// outputs per-strip edge shading. render() below crossfades two calls to
-// this — the count above and below the current value — so that changing
-// slice count (by hand or via an animated state transition) never pops a
-// strip in or out at full strength; it always eases in continuously.
+// outputs per-strip edge shading. The strip count itself is fixed (see
+// SLICE_COUNT below); the "space" control instead scales u_sliceOffX, how
+// far each strip's sampled content is pulled from its neighbour — at 0 the
+// 40 strips sample continuously and look seamless, and at the high end the
+// outer strips are pulled so far they sample past the heart into
+// background, leaving only the centremost strips showing anything. Since
+// the count never changes, every parameter here is already continuous —
+// no crossfading needed to keep the transition jitter-free.
+const float SLICE_COUNT = 40.0;
+
 vec3 sliceLayer(vec2 uv, vec2 suv, float n){
   float shade = 1.0;
   vec2 wuv = uv;
-  if (u_sliceMix > 0.001 && n >= 1.0){
+  if (u_sliceMix > 0.001){
     float sx = suv.x * 0.5 + 0.5;
     float idx = floor(sx * n);
     float local = fract(sx * n);
@@ -431,12 +436,7 @@ vec3 sliceLayer(vec2 uv, vec2 suv, float n){
 }
 
 vec3 render(vec2 uv, vec2 suv){
-  float nLo = floor(u_sliceCount);
-  float blend = u_sliceCount - nLo;
-  vec3 lo = sliceLayer(uv, suv, nLo);
-  if (blend < 0.0005) return lo;
-  vec3 hi = sliceLayer(uv, suv, nLo + 1.0);
-  return mix(lo, hi, blend);
+  return sliceLayer(uv, suv, SLICE_COUNT);
 }
 
 void main(){
@@ -611,7 +611,13 @@ const groupsEl = document.getElementById('groups');
 const quickBar = document.getElementById('quickBar');
 
 // these live in the always-visible, unstyled quick bar instead of a panel group
-const BASIC_KEYS = new Set(['scale', 'soft', 'spread', 'sliceMix', 'sliceCount']);
+const BASIC_KEYS = new Set(['scale', 'soft', 'spread', 'sliceMix', 'sliceSpace']);
+
+// "space" (0-100, quick bar) maps onto the shader's raw horizontal shift
+// amount (u_sliceOffX) — 0 pulls strips apart by nothing (seamless), 100
+// pulls the outer strips' sampled content past the heart entirely, leaving
+// only the centremost strips showing anything.
+const SLICE_SPACE_MAX_OFFSET = 2.2;
 
 for (const [title, items] of GROUPS){
   const det = document.createElement('details');
@@ -1052,6 +1058,10 @@ function drawScene(overrides){
   gl.uniform1f(u('u_glowU1'), gradStops[gradStops.length - 1].p);
   for (const k in state){
     const v = (overrides && k in overrides) ? overrides[k] : state[k];
+    if (k === 'sliceSpace'){
+      gl.uniform1f(u('u_sliceOffX'), (v / 100) * SLICE_SPACE_MAX_OFFSET);
+      continue;
+    }
     if (typeof v === 'number') gl.uniform1f(u('u_' + k), v);
     else gl.uniform3fv(u('u_' + k), hexToRgb(v));
   }

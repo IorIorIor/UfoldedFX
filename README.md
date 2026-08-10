@@ -22,10 +22,10 @@ node server.js
 
 ## Controls
 
-Five sliders — size, band spread, blur, slice mix, slice count — sit unstyled in the
-top-right corner and are always visible. The `All Settings` button beneath them expands
-the rest of the controls directly underneath, in that same unstyled floating layout (no
-separate boxed panel):
+Five sliders — size, band spread, blur, slice mix, space — sit unstyled in the top-right
+corner and are always visible. The `All Settings` button beneath them expands the rest of
+the controls directly underneath, in that same unstyled floating layout (no separate
+boxed panel):
 
 - **Heart Shape**: size (up to 5x — the heart can grow well past the frame), position,
   width/height stretch, rotation, roundness, and an
@@ -39,19 +39,21 @@ separate boxed panel):
   a 256x1 texture, so any number of stops costs the shader a single lookup. The last two
   stops anchor where the outer glow rises.
 - **Animation**: pulse speed/depth, sine-to-heartbeat shape, beat punch, spin, hue cycle.
-- **Glitch Slices**: slice mix, count (0 all the way up — 0 renders as a plain unsliced
-  heart), x/y shift, stretch, skew, perspective (folded-panel tilt with directional
-  shading), randomness, seed, edge shading, drift. By default the slice pattern expands
-  symmetrically from the centre of the screen (shift, stretch, skew and fold all grow
-  outward, and central strips repeat the heart's notch); the `randomness` slider blends
-  toward a fully random per-strip pattern driven by `seed`. Every strip's fold direction,
-  jitter and drift phase is seeded from its distance-rank from the centre rather than its
-  raw left-to-right position, so the pattern always mirrors cleanly and grows outward from
-  the middle as `slice count` changes — dragging the slider or animating between two saved
-  states with different counts. Changing the count never pops a strip in or out at full
-  strength either: the shader renders the count just below and just above the current
-  value and crossfades between them, so slice count is continuously, jitter-free animated
-  at every fractional value in between, not just at whole numbers.
+- **Glitch Slices**: there are always exactly 40 strips — `slice mix` is the master
+  on/off/intensity blend, and `space` (0–100) is the one dial that shapes how visible they
+  are. At 0 the 40 strips sample continuously and look like a single seamless heart; in
+  the middle they visibly fan out (the current default, ~10, matches the earlier tuned
+  "Sliced" look); pushed to 100 the outer strips are pulled so far sideways they sample
+  past the heart into background, leaving only the centremost couple of strips showing
+  anything. `space` is a friendlier front end for the underlying `shift x` — y shift,
+  stretch, skew, perspective (folded-panel tilt with directional shading), randomness,
+  seed, edge shading and drift remain independent, advanced-only controls. By default the
+  pattern expands symmetrically from the centre of the screen, and central strips repeat
+  the heart's notch; the `randomness` slider blends toward a fully random per-strip
+  pattern driven by `seed`. Every strip's fold direction, jitter and drift phase is seeded
+  from its distance-rank from the centre rather than its raw left-to-right position, so
+  the pattern always mirrors cleanly at any `space` value, including mid-animation between
+  two saved states.
 - **Post FX**: chromatic aberration, grain, vignette, brightness, contrast, saturation.
 
 `Save PNG` exports the current frame.
