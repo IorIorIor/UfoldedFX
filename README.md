@@ -48,7 +48,10 @@ separate boxed panel):
   jitter and drift phase is seeded from its distance-rank from the centre rather than its
   raw left-to-right position, so the pattern always mirrors cleanly and grows outward from
   the middle as `slice count` changes — dragging the slider or animating between two saved
-  states with different counts.
+  states with different counts. Changing the count never pops a strip in or out at full
+  strength either: the shader renders the count just below and just above the current
+  value and crossfades between them, so slice count is continuously, jitter-free animated
+  at every fractional value in between, not just at whole numbers.
 - **Post FX**: chromatic aberration, grain, vignette, brightness, contrast, saturation.
 
 `Save PNG` exports the current frame.

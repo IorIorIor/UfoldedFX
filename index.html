@@ -351,12 +351,15 @@ vec3 heartColor(vec2 uv){
   return c;
 }
 
-// vertical-strip glitch warp; also outputs per-strip edge shading
-vec3 render(vec2 uv, vec2 suv){
+// vertical-strip glitch warp for a specific (integer) strip count; also
+// outputs per-strip edge shading. render() below crossfades two calls to
+// this — the count above and below the current value — so that changing
+// slice count (by hand or via an animated state transition) never pops a
+// strip in or out at full strength; it always eases in continuously.
+vec3 sliceLayer(vec2 uv, vec2 suv, float n){
   float shade = 1.0;
   vec2 wuv = uv;
-  if (u_sliceMix > 0.001 && u_sliceCount >= 1.0){
-    float n = u_sliceCount;
+  if (u_sliceMix > 0.001 && n >= 1.0){
     float sx = suv.x * 0.5 + 0.5;
     float idx = floor(sx * n);
     float local = fract(sx * n);
@@ -425,6 +428,15 @@ vec3 render(vec2 uv, vec2 suv){
     shade = mix(1.0, sh, u_sliceMix);
   }
   return heartColor(wuv) * shade;
+}
+
+vec3 render(vec2 uv, vec2 suv){
+  float nLo = floor(u_sliceCount);
+  float blend = u_sliceCount - nLo;
+  vec3 lo = sliceLayer(uv, suv, nLo);
+  if (blend < 0.0005) return lo;
+  vec3 hi = sliceLayer(uv, suv, nLo + 1.0);
+  return mix(lo, hi, blend);
 }
 
 void main(){
