@@ -152,7 +152,7 @@ const GROUPS = [
   ]],
   ['Glitch Slices', [
     ['sliceMix',   'slice mix',   0.0,  1.0,  0.01, 1.0],
-    ['sliceCount', 'slice count', 2,   80,    1,    29],
+    ['sliceCount', 'slice count', 0,   80,    1,    29],
     ['sliceOffX',  'shift x',     0.0,  0.6,  0.005, 0.225],
     ['sliceOffY',  'shift y',     0.0,  0.6,  0.005, 0.0],
     ['sliceZoom',  'stretch',     0.0,  1.0,  0.01, 0.0],
@@ -355,26 +355,35 @@ vec3 heartColor(vec2 uv){
 vec3 render(vec2 uv, vec2 suv){
   float shade = 1.0;
   vec2 wuv = uv;
-  if (u_sliceMix > 0.001){
-    float n = max(u_sliceCount, 1.0);
+  if (u_sliceMix > 0.001 && u_sliceCount >= 1.0){
+    float n = u_sliceCount;
     float sx = suv.x * 0.5 + 0.5;
     float idx = floor(sx * n);
     float local = fract(sx * n);
-
-    float h1 = hash(idx * 7.31 + u_sliceSeed * 1.13 + 3.7);
-    float h2 = hash(idx * 3.77 + u_sliceSeed * 2.71 + 11.0);
-    float h3 = hash(idx * 9.13 + u_sliceSeed * 0.93 + 27.0);
-    float h4 = hash(idx * 5.21 + u_sliceSeed * 1.31 + 41.0);
-    float h5 = hash(idx * 6.53 + u_sliceSeed * 0.57 + 53.0);
-
-    float dr = sin(u_time * u_drift * 2.0 + idx * 1.71);
-    float dc2 = cos(u_time * u_drift * 1.6 + idx * 2.39);
 
     float cxs = ((idx + 0.5) / n) * 2.0 - 1.0; // strip centre in suv space
     float aspect = u_res.x / u_res.y;
     float cx = cxs * aspect;                    // strip centre in aspect space
     float sd = cxs;                             // signed distance from screen centre
-    float alt = mod(idx, 2.0) * 2.0 - 1.0;      // alternating fold direction
+
+    // rank = this strip's layer distance from the centre, shared by its
+    // mirror partner on the other side. Every symmetric quantity below is
+    // seeded from rank rather than the raw left-to-right idx, so the fold
+    // direction, jitter and drift phase always mirror cleanly regardless of
+    // whether the slice count is odd/even or a fractional value mid-animation
+    // — the pattern reads as growing from the centre outward at any count.
+    float rank = floor(abs(sd) * n * 0.5 + 0.0005);
+
+    float h1 = hash(rank * 7.31 + u_sliceSeed * 1.13 + 3.7);
+    float h2 = hash(rank * 3.77 + u_sliceSeed * 2.71 + 11.0);
+    float h3 = hash(rank * 9.13 + u_sliceSeed * 0.93 + 27.0);
+    float h4 = hash(rank * 5.21 + u_sliceSeed * 1.31 + 41.0);
+    float h5 = hash(rank * 6.53 + u_sliceSeed * 0.57 + 53.0);
+
+    float dr = sin(u_time * u_drift * 2.0 + rank * 1.71);
+    float dc2 = cos(u_time * u_drift * 1.6 + rank * 2.39);
+
+    float alt = mod(rank, 2.0) * 2.0 - 1.0;     // alternating fold direction
     float r = clamp(u_sliceRandom, 0.0, 1.0);
 
     // random pattern

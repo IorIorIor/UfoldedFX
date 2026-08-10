@@ -39,11 +39,16 @@ separate boxed panel):
   a 256x1 texture, so any number of stops costs the shader a single lookup. The last two
   stops anchor where the outer glow rises.
 - **Animation**: pulse speed/depth, sine-to-heartbeat shape, beat punch, spin, hue cycle.
-- **Glitch Slices**: slice mix, count, x/y shift, stretch, skew, perspective (folded-panel
-  tilt with directional shading), randomness, seed, edge shading, drift. By default the
-  slice pattern expands symmetrically from the centre of the screen (shift, stretch,
-  skew and fold all grow outward, and central strips repeat the heart's notch);
-  the `randomness` slider blends toward a fully random per-strip pattern driven by `seed`.
+- **Glitch Slices**: slice mix, count (0 all the way up — 0 renders as a plain unsliced
+  heart), x/y shift, stretch, skew, perspective (folded-panel tilt with directional
+  shading), randomness, seed, edge shading, drift. By default the slice pattern expands
+  symmetrically from the centre of the screen (shift, stretch, skew and fold all grow
+  outward, and central strips repeat the heart's notch); the `randomness` slider blends
+  toward a fully random per-strip pattern driven by `seed`. Every strip's fold direction,
+  jitter and drift phase is seeded from its distance-rank from the centre rather than its
+  raw left-to-right position, so the pattern always mirrors cleanly and grows outward from
+  the middle as `slice count` changes — dragging the slider or animating between two saved
+  states with different counts.
 - **Post FX**: chromatic aberration, grain, vignette, brightness, contrast, saturation.
 
 `Save PNG` exports the current frame.
