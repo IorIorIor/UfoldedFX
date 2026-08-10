@@ -1,0 +1,313 @@
+[
+  {
+    "id": "placeholder-idle",
+    "name": "IDLE",
+    "_placeholder": true,
+    "state": {
+      "scale": 0.91,
+      "posX": 0,
+      "posY": 0,
+      "stretchX": 1,
+      "stretchY": 1,
+      "rot": 0,
+      "round": 0,
+      "shapeMix": 0,
+      "nestMix": 0,
+      "spread": 0.68,
+      "bandOff": -0.07,
+      "spaceExp": 0.92,
+      "soft": 0.09,
+      "glowStr": 0.69,
+      "glowFall": 0.29,
+      "pulseSpeed": 0.52,
+      "pulseAmt": 0.06,
+      "pulseShape": 0.19,
+      "beatSharp": 12,
+      "spin": 0,
+      "hueCycle": 0,
+      "sliceMix": 1,
+      "sliceCount": 29,
+      "sliceOffX": 0.225,
+      "sliceOffY": 0,
+      "sliceZoom": 0,
+      "sliceSkew": 0.04,
+      "slicePersp": 0,
+      "sliceRandom": 0,
+      "sliceSeed": 0,
+      "stripShade": 0,
+      "shadeWidth": 0,
+      "drift": 0,
+      "chromAb": 0,
+      "grain": 0.08,
+      "vig": 1,
+      "bright": 1,
+      "contrast": 1.07,
+      "sat": 1.1,
+      "colGlow": "#b48cff"
+    },
+    "gradStops": [
+      {
+        "p": 0.004,
+        "c": "#510125"
+      },
+      {
+        "p": 0.212,
+        "c": "#2377fb"
+      },
+      {
+        "p": 0.302,
+        "c": "#ef56bb"
+      },
+      {
+        "p": 0.401,
+        "c": "#fc2f42"
+      },
+      {
+        "p": 0.508,
+        "c": "#fc9ca5"
+      },
+      {
+        "p": 0.655,
+        "c": "#9160e6"
+      },
+      {
+        "p": 0.736,
+        "c": "#1f072a"
+      }
+    ]
+  },
+  {
+    "id": "placeholder-text-message",
+    "name": "TEXT MESSAGE",
+    "_placeholder": true,
+    "state": {
+      "scale": 0.91,
+      "posX": 0,
+      "posY": 0,
+      "stretchX": 1,
+      "stretchY": 1,
+      "rot": 0,
+      "round": 0,
+      "shapeMix": 0,
+      "nestMix": 0,
+      "spread": 0.68,
+      "bandOff": -0.07,
+      "spaceExp": 0.92,
+      "soft": 0.09,
+      "glowStr": 0.69,
+      "glowFall": 0.29,
+      "pulseSpeed": 1.6,
+      "pulseAmt": 0.12,
+      "pulseShape": 1,
+      "beatSharp": 12,
+      "spin": 0,
+      "hueCycle": 0,
+      "sliceMix": 1,
+      "sliceCount": 29,
+      "sliceOffX": 0.225,
+      "sliceOffY": 0,
+      "sliceZoom": 0,
+      "sliceSkew": 0.04,
+      "slicePersp": 0,
+      "sliceRandom": 0,
+      "sliceSeed": 0,
+      "stripShade": 0,
+      "shadeWidth": 0,
+      "drift": 0,
+      "chromAb": 0,
+      "grain": 0.08,
+      "vig": 1,
+      "bright": 1,
+      "contrast": 1.07,
+      "sat": 1.1,
+      "colGlow": "#b48cff",
+      "sliceSpace": 12
+    },
+    "gradStops": [
+      {
+        "p": 0.004,
+        "c": "#510125"
+      },
+      {
+        "p": 0.212,
+        "c": "#2377fb"
+      },
+      {
+        "p": 0.302,
+        "c": "#ef56bb"
+      },
+      {
+        "p": 0.401,
+        "c": "#fc2f42"
+      },
+      {
+        "p": 0.508,
+        "c": "#fc9ca5"
+      },
+      {
+        "p": 0.655,
+        "c": "#9160e6"
+      },
+      {
+        "p": 0.736,
+        "c": "#1f072a"
+      }
+    ]
+  },
+  {
+    "id": "placeholder-media-message",
+    "name": "MEDIA MESSAGE",
+    "_placeholder": true,
+    "state": {
+      "scale": 1.2,
+      "posX": 0,
+      "posY": 0,
+      "stretchX": 1,
+      "stretchY": 1,
+      "rot": 0,
+      "round": 0,
+      "shapeMix": 0,
+      "nestMix": 0,
+      "spread": 0.68,
+      "bandOff": -0.07,
+      "spaceExp": 0.92,
+      "soft": 0.09,
+      "glowStr": 0.69,
+      "glowFall": 0.29,
+      "pulseSpeed": 0.52,
+      "pulseAmt": 0.06,
+      "pulseShape": 0.19,
+      "beatSharp": 12,
+      "spin": 0,
+      "hueCycle": 0,
+      "sliceMix": 1,
+      "sliceCount": 29,
+      "sliceOffX": 0.225,
+      "sliceOffY": 0,
+      "sliceZoom": 0,
+      "sliceSkew": 0.04,
+      "slicePersp": 0,
+      "sliceRandom": 0,
+      "sliceSeed": 0,
+      "stripShade": 0,
+      "shadeWidth": 0,
+      "drift": 0,
+      "chromAb": 0,
+      "grain": 0.08,
+      "vig": 1,
+      "bright": 1,
+      "contrast": 1.07,
+      "sat": 1.1,
+      "colGlow": "#b48cff",
+      "sliceSpace": 50
+    },
+    "gradStops": [
+      {
+        "p": 0.004,
+        "c": "#510125"
+      },
+      {
+        "p": 0.212,
+        "c": "#2377fb"
+      },
+      {
+        "p": 0.302,
+        "c": "#ef56bb"
+      },
+      {
+        "p": 0.401,
+        "c": "#fc2f42"
+      },
+      {
+        "p": 0.508,
+        "c": "#fc9ca5"
+      },
+      {
+        "p": 0.655,
+        "c": "#9160e6"
+      },
+      {
+        "p": 0.736,
+        "c": "#1f072a"
+      }
+    ]
+  },
+  {
+    "id": "placeholder-new-reveal",
+    "name": "NEW REVEAL",
+    "_placeholder": true,
+    "state": {
+      "scale": 3,
+      "posX": 0,
+      "posY": 0,
+      "stretchX": 1,
+      "stretchY": 1,
+      "rot": 0,
+      "round": 0,
+      "shapeMix": 0,
+      "nestMix": 0,
+      "spread": 0.68,
+      "bandOff": -0.07,
+      "spaceExp": 0.92,
+      "soft": 0.09,
+      "glowStr": 1.2,
+      "glowFall": 0.29,
+      "pulseSpeed": 0.52,
+      "pulseAmt": 0.06,
+      "pulseShape": 0.19,
+      "beatSharp": 12,
+      "spin": 0,
+      "hueCycle": 0,
+      "sliceMix": 1,
+      "sliceCount": 29,
+      "sliceOffX": 0.225,
+      "sliceOffY": 0,
+      "sliceZoom": 0,
+      "sliceSkew": 0.04,
+      "slicePersp": 0,
+      "sliceRandom": 0,
+      "sliceSeed": 0,
+      "stripShade": 0,
+      "shadeWidth": 0,
+      "drift": 0,
+      "chromAb": 0,
+      "grain": 0.08,
+      "vig": 1,
+      "bright": 1,
+      "contrast": 1.07,
+      "sat": 1.1,
+      "colGlow": "#b48cff",
+      "sliceSpace": 0
+    },
+    "gradStops": [
+      {
+        "p": 0.004,
+        "c": "#510125"
+      },
+      {
+        "p": 0.212,
+        "c": "#2377fb"
+      },
+      {
+        "p": 0.302,
+        "c": "#ef56bb"
+      },
+      {
+        "p": 0.401,
+        "c": "#fc2f42"
+      },
+      {
+        "p": 0.508,
+        "c": "#fc9ca5"
+      },
+      {
+        "p": 0.655,
+        "c": "#9160e6"
+      },
+      {
+        "p": 0.736,
+        "c": "#1f072a"
+      }
+    ]
+  }
+]
