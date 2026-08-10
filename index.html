@@ -209,7 +209,7 @@ uniform float u_time;
 uniform float u_scale, u_posX, u_posY, u_stretchX, u_stretchY, u_rot, u_round;
 uniform float u_spread, u_bandOff, u_spaceExp, u_soft, u_glowStr, u_glowFall;
 uniform float u_pulseSpeed, u_pulseAmt, u_pulseShape, u_beatSharp, u_spin, u_hueCycle;
-uniform float u_sliceMix, u_sliceOffX, u_sliceOffY, u_sliceZoom;
+uniform float u_sliceMix, u_sliceOffX, u_sliceOffY, u_sliceZoom, u_sliceSpaceFrac;
 uniform float u_sliceSeed, u_stripShade, u_shadeWidth, u_drift;
 uniform float u_sliceSkew, u_slicePersp, u_sliceRandom;
 uniform float u_chromAb, u_grain, u_vig, u_bright, u_contrast, u_sat;
@@ -410,11 +410,17 @@ vec3 sliceLayer(vec2 uv, vec2 suv, float n){
     float skC = sd * u_sliceSkew * 1.5;                        // shear flips at centre
     float tiC = alt * u_slicePersp * (0.25 + 0.75 * abs(sd));  // accordion fold
 
+    // "space" is the master intensity for the whole slice effect: at 0 every
+    // distortion term below is gated to exactly zero, so no seams, shading
+    // or skew can leak through and the heart renders perfectly seamless.
+    float sf = clamp(u_sliceSpaceFrac, 0.0, 1.0);
+    float gate = smoothstep(0.0, 0.15, sf);
+
     float ox = mix(oxC, oxR, r) + 0.4 * dr  * u_sliceOffX * u_drift;
-    float oy = mix(oyC, oyR, r) + 0.4 * dc2 * u_sliceOffY * u_drift;
-    float stretch = max(mix(stC, stR, r), 0.1);
-    float skew = mix(skC, skR, r);
-    float tilt = mix(tiC, tiR, r);
+    float oy = (mix(oyC, oyR, r) + 0.4 * dc2 * u_sliceOffY * u_drift) * gate;
+    float stretch = max(1.0 + (mix(stC, stR, r) - 1.0) * gate, 0.1);
+    float skew = mix(skC, skR, r) * gate;
+    float tilt = mix(tiC, tiR, r) * gate;
 
     vec2 guv = uv;
     guv.x = cx + (uv.x - cx) / stretch + ox;
@@ -428,9 +434,19 @@ vec3 sliceLayer(vec2 uv, vec2 suv, float n){
 
     float e = min(local, 1.0 - local) * 2.0;    // 0 at edges, 1 at centre
     float g = mix(10.0, 1.2, clamp(u_shadeWidth, 0.0, 1.0));
-    float sh = 1.0 - u_stripShade * pow(1.0 - e, g);
+    float sh = 1.0 - u_stripShade * gate * pow(1.0 - e, g);
     sh *= 1.0 - 0.55 * clamp(tilt * lc * 2.0, 0.0, 1.0); // side tilted away goes dark
     shade = mix(1.0, sh, u_sliceMix);
+
+    // visible separation: as space grows, a background gap opens between
+    // strips — each slice's content survives only in a narrowing central
+    // window, so the slices themselves visibly pull apart while sliding
+    float gapW = 0.72 * pow(sf, 1.2);
+    float winHalf = 0.5 * (1.0 - gapW);
+    float m = 1.0 - smoothstep(winHalf, winHalf + 0.06, abs(lc));
+    vec3 content = heartColor(wuv) * shade;
+    vec3 bgc = texture2D(u_grad, vec2(0.998, 0.5)).rgb;
+    return mix(bgc, content, mix(1.0, m, u_sliceMix));
   }
   return heartColor(wuv) * shade;
 }
@@ -1060,6 +1076,7 @@ function drawScene(overrides){
     const v = (overrides && k in overrides) ? overrides[k] : state[k];
     if (k === 'sliceSpace'){
       gl.uniform1f(u('u_sliceOffX'), (v / 100) * SLICE_SPACE_MAX_OFFSET);
+      gl.uniform1f(u('u_sliceSpaceFrac'), v / 100);
       continue;
     }
     if (typeof v === 'number') gl.uniform1f(u('u_' + k), v);
