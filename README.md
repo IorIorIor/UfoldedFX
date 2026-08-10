@@ -39,21 +39,21 @@ boxed panel):
   a 256x1 texture, so any number of stops costs the shader a single lookup. The last two
   stops anchor where the outer glow rises.
 - **Animation**: pulse speed/depth, sine-to-heartbeat shape, beat punch, spin, hue cycle.
-- **Glitch Slices**: there are always exactly 40 strips — `slice mix` is the master
-  on/off/intensity blend, and `space` (0–100) is the one dial that shapes how visible they
-  are. At 0 the 40 strips sample continuously and look like a single seamless heart; in
-  the middle they visibly fan out (the current default, ~10, matches the earlier tuned
-  "Sliced" look); pushed to 100 the outer strips are pulled so far sideways they sample
-  past the heart into background, leaving only the centremost couple of strips showing
-  anything. `space` is a friendlier front end for the underlying `shift x` — y shift,
+- **Glitch Slices**: a slice is a visible band of content; adjacent slices meet directly
+  (never separated by dark bars) and are distinguished only by the discontinuity in what
+  each one samples. `space` (0–100) is the width of each slice: near 0 the slices go
+  hairline-thin and the fan warp reads as perfectly smooth ("no slices"); the default (~5)
+  gives many fine slices; 50 gives a few big heart panels; 100 makes each slice half the
+  screen wide (~2 slices). The grid is anchored on a slice centred in the middle of the
+  screen, so it is always mirror-symmetric, and since every boundary position moves
+  smoothly with the width value, dragging `space` (or animating it between saved states)
+  sweeps the slices continuously outward from the centre. `slice mix` is the master
+  on/off blend; `shift x` sets how far the fan displaces each slice's content; y shift,
   stretch, skew, perspective (folded-panel tilt with directional shading), randomness,
-  seed, edge shading and drift remain independent, advanced-only controls. By default the
-  pattern expands symmetrically from the centre of the screen, and central strips repeat
-  the heart's notch; the `randomness` slider blends toward a fully random per-strip
-  pattern driven by `seed`. Every strip's fold direction, jitter and drift phase is seeded
-  from its distance-rank from the centre rather than its raw left-to-right position, so
-  the pattern always mirrors cleanly at any `space` value, including mid-animation between
-  two saved states.
+  seed, edge shading and drift remain independent advanced controls, each seeded from a
+  slice's distance-rank from the centre so the pattern mirrors cleanly at any width.
+  Per-slice detail fades out automatically as slices approach subpixel width, so tiny
+  `space` values stay clean instead of noisy.
 - **Post FX**: chromatic aberration, grain, vignette, brightness, contrast, saturation.
 
 `Save PNG` exports the current frame.

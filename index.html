@@ -152,7 +152,8 @@ const GROUPS = [
   ]],
   ['Glitch Slices', [
     ['sliceMix',   'slice mix',   0.0,  1.0,  0.01, 1.0],
-    ['sliceSpace', 'space',       0,    100,  1,    10],
+    ['sliceSpace', 'space',       0,    100,  1,    5],
+    ['sliceOffX',  'shift x',     0.0,  0.6,  0.005, 0.225],
     ['sliceOffY',  'shift y',     0.0,  0.6,  0.005, 0.0],
     ['sliceZoom',  'stretch',     0.0,  1.0,  0.01, 0.0],
     ['sliceSkew',  'skew',        0.0,  1.0,  0.01, 0.04],
@@ -352,35 +353,33 @@ vec3 heartColor(vec2 uv){
 
 // vertical-strip glitch warp for a specific (integer) strip count; also
 // outputs per-strip edge shading. The strip count itself is fixed (see
-// SLICE_COUNT below); the "space" control instead scales u_sliceOffX, how
-// far each strip's sampled content is pulled from its neighbour — at 0 the
-// 40 strips sample continuously and look seamless, and at the high end the
-// outer strips are pulled so far they sample past the heart into
-// background, leaving only the centremost strips showing anything. Since
-// the count never changes, every parameter here is already continuous —
-// no crossfading needed to keep the transition jitter-free.
-const float SLICE_COUNT = 40.0;
-
-vec3 sliceLayer(vec2 uv, vec2 suv, float n){
+// A slice is a visible band of content; adjacent slices meet directly (no
+// separator bars) and are distinguished only by the discontinuity in what
+// they sample. "space" is the width of each slice: near 0 the slices go
+// hairline-thin and the warp becomes effectively continuous (reads as no
+// slicing at all), mid values give many visible slices, and 100 makes each
+// slice half the screen wide (reads as ~2 big slices). The grid is
+// anchored on a slice centred at the screen's middle, so it is always
+// mirror-symmetric and slices grow outward from the centre as the width
+// changes — a continuous motion, since every boundary position moves
+// smoothly with the width value.
+vec3 sliceLayer(vec2 uv, vec2 suv){
   float shade = 1.0;
   vec2 wuv = uv;
   if (u_sliceMix > 0.001){
-    float sx = suv.x * 0.5 + 0.5;
-    float idx = floor(sx * n);
-    float local = fract(sx * n);
-
-    float cxs = ((idx + 0.5) / n) * 2.0 - 1.0; // strip centre in suv space
     float aspect = u_res.x / u_res.y;
-    float cx = cxs * aspect;                    // strip centre in aspect space
-    float sd = cxs;                             // signed distance from screen centre
+    float w = max(clamp(u_sliceSpaceFrac, 0.0, 1.0), 0.004); // slice width in suv units (screen = 2)
+    // per-slice detail (shear, tilt, jitter, shading) fades out as slices
+    // approach subpixel width, so tiny widths stay clean instead of noisy
+    float gate = smoothstep(0.01, 0.08, w);
 
-    // rank = this strip's layer distance from the centre, shared by its
-    // mirror partner on the other side. Every symmetric quantity below is
-    // seeded from rank rather than the raw left-to-right idx, so the fold
-    // direction, jitter and drift phase always mirror cleanly regardless of
-    // whether the slice count is odd/even or a fractional value mid-animation
-    // — the pattern reads as growing from the centre outward at any count.
-    float rank = floor(abs(sd) * n * 0.5 + 0.0005);
+    float p = suv.x / w + 0.5;   // grid with one slice centred on x = 0
+    float idx = floor(p);
+    float local = fract(p);
+    float cxs = idx * w;         // slice centre in suv space
+    float cx = cxs * aspect;     // slice centre in aspect space
+    float sd = cxs;              // signed distance from screen centre
+    float rank = abs(idx);       // shared by mirror partners — always symmetric
 
     float h1 = hash(rank * 7.31 + u_sliceSeed * 1.13 + 3.7);
     float h2 = hash(rank * 3.77 + u_sliceSeed * 2.71 + 11.0);
@@ -391,8 +390,8 @@ vec3 sliceLayer(vec2 uv, vec2 suv, float n){
     float dr = sin(u_time * u_drift * 2.0 + rank * 1.71);
     float dc2 = cos(u_time * u_drift * 1.6 + rank * 2.39);
 
-    float alt = mod(rank, 2.0) * 2.0 - 1.0;     // alternating fold direction
-    float r = clamp(u_sliceRandom, 0.0, 1.0);
+    float alt = mod(rank, 2.0) * 2.0 - 1.0;         // alternating fold direction
+    float r = clamp(u_sliceRandom, 0.0, 1.0) * gate;
 
     // random pattern
     float oxR = (h1 - 0.5) * 2.0 * u_sliceOffX;
@@ -402,23 +401,17 @@ vec3 sliceLayer(vec2 uv, vec2 suv, float n){
     float tiR = (h5 - 0.5) * 2.0 * u_slicePersp;
 
     // centre-out pattern: distortion grows from the middle outward.
-    // oxC partially re-centres each strip's sampling, so central strips
+    // oxC partially re-centres each slice's sampling, so central slices
     // repeat the notch and the whole heart fans out like the reference.
     float oxC = -sd * aspect * u_sliceOffX * 2.5;
     float oyC = alt * u_sliceOffY * abs(sd);
-    float stC = 1.0 + u_sliceZoom * 1.5 * abs(sd);             // outer strips smear wider
+    float stC = 1.0 + u_sliceZoom * 1.5 * abs(sd);             // outer slices smear wider
     float skC = sd * u_sliceSkew * 1.5;                        // shear flips at centre
     float tiC = alt * u_slicePersp * (0.25 + 0.75 * abs(sd));  // accordion fold
 
-    // "space" is the master intensity for the whole slice effect: at 0 every
-    // distortion term below is gated to exactly zero, so no seams, shading
-    // or skew can leak through and the heart renders perfectly seamless.
-    float sf = clamp(u_sliceSpaceFrac, 0.0, 1.0);
-    float gate = smoothstep(0.0, 0.15, sf);
-
-    float ox = mix(oxC, oxR, r) + 0.4 * dr  * u_sliceOffX * u_drift;
+    float ox = mix(oxC, oxR, r) + 0.4 * dr  * u_sliceOffX * u_drift * gate;
     float oy = (mix(oyC, oyR, r) + 0.4 * dc2 * u_sliceOffY * u_drift) * gate;
-    float stretch = max(1.0 + (mix(stC, stR, r) - 1.0) * gate, 0.1);
+    float stretch = max(mix(stC, stR, r), 0.1);
     float skew = mix(skC, skR, r) * gate;
     float tilt = mix(tiC, tiR, r) * gate;
 
@@ -426,7 +419,7 @@ vec3 sliceLayer(vec2 uv, vec2 suv, float n){
     guv.x = cx + (uv.x - cx) / stretch + ox;
     guv.y = uv.y + oy;
 
-    // folded-panel look: shear + fake perspective across each strip
+    // folded-panel look: shear + fake perspective across each slice
     float lc = local - 0.5;
     guv.y += lc * skew * 0.7;
     guv.y *= 1.0 + lc * tilt * 0.8;
@@ -437,22 +430,12 @@ vec3 sliceLayer(vec2 uv, vec2 suv, float n){
     float sh = 1.0 - u_stripShade * gate * pow(1.0 - e, g);
     sh *= 1.0 - 0.55 * clamp(tilt * lc * 2.0, 0.0, 1.0); // side tilted away goes dark
     shade = mix(1.0, sh, u_sliceMix);
-
-    // visible separation: as space grows, a background gap opens between
-    // strips — each slice's content survives only in a narrowing central
-    // window, so the slices themselves visibly pull apart while sliding
-    float gapW = 0.72 * pow(sf, 1.2);
-    float winHalf = 0.5 * (1.0 - gapW);
-    float m = 1.0 - smoothstep(winHalf, winHalf + 0.06, abs(lc));
-    vec3 content = heartColor(wuv) * shade;
-    vec3 bgc = texture2D(u_grad, vec2(0.998, 0.5)).rgb;
-    return mix(bgc, content, mix(1.0, m, u_sliceMix));
   }
   return heartColor(wuv) * shade;
 }
 
 vec3 render(vec2 uv, vec2 suv){
-  return sliceLayer(uv, suv, SLICE_COUNT);
+  return sliceLayer(uv, suv);
 }
 
 void main(){
@@ -629,11 +612,9 @@ const quickBar = document.getElementById('quickBar');
 // these live in the always-visible, unstyled quick bar instead of a panel group
 const BASIC_KEYS = new Set(['scale', 'soft', 'spread', 'sliceMix', 'sliceSpace']);
 
-// "space" (0-100, quick bar) maps onto the shader's raw horizontal shift
-// amount (u_sliceOffX) — 0 pulls strips apart by nothing (seamless), 100
-// pulls the outer strips' sampled content past the heart entirely, leaving
-// only the centremost strips showing anything.
-const SLICE_SPACE_MAX_OFFSET = 2.2;
+// "space" (0-100, quick bar) is the width of each slice — the shader turns
+// it into the slice grid directly (100 = half-screen-wide slices, ~0 =
+// hairline slices that read as no slicing at all).
 
 for (const [title, items] of GROUPS){
   const det = document.createElement('details');
@@ -1075,7 +1056,6 @@ function drawScene(overrides){
   for (const k in state){
     const v = (overrides && k in overrides) ? overrides[k] : state[k];
     if (k === 'sliceSpace'){
-      gl.uniform1f(u('u_sliceOffX'), (v / 100) * SLICE_SPACE_MAX_OFFSET);
       gl.uniform1f(u('u_sliceSpaceFrac'), v / 100);
       continue;
     }
