@@ -13,7 +13,7 @@ browser, or serve it:
 npx serve .
 ```
 
-For server-synced Saved Settings (see below), run the bundled zero-dependency Node
+For server-synced Saved States (see below), run the bundled zero-dependency Node
 server instead:
 
 ```sh
@@ -23,10 +23,12 @@ node server.js
 ## Controls
 
 Five sliders — size, band spread, blur, slice mix, slice count — sit unstyled in the
-top-right corner and are always visible. The `All Settings` button beneath them opens the
-full panel with everything else:
+top-right corner and are always visible. The `All Settings` button beneath them expands
+the rest of the controls directly underneath, in that same unstyled floating layout (no
+separate boxed panel):
 
-- **Heart Shape**: size, position, width/height stretch, rotation, roundness, and an
+- **Heart Shape**: size (up to 5x — the heart can grow well past the frame), position,
+  width/height stretch, rotation, roundness, and an
   `svg↔classic` blend. The default silhouette is a signed-distance field baked at startup
   from a polygon sampled off the reference heart SVG (embedded in the file — still zero
   external requests); `classic` is an analytic heart SDF.
@@ -46,11 +48,14 @@ full panel with everything else:
 
 `Save PNG` exports the current frame.
 
-## Saved Settings
+## Saved States
 
-`Save Settings` snapshots every slider, the gradient, and the glow color into a named
-entry in the `Saved (N) ▾` dropdown. Click an entry's name to load it, the pencil to
-rename it inline, and `✕` to delete it.
+`Save State` snapshots every slider, the gradient, and the glow color into a named entry
+in the `States (N) ▾` dropdown. Click an entry's name and the whole scene animates there
+over about 1.4s — every slider eases to its new value and the gradient crossfades to the
+new colors — rather than snapping instantly. The pencil renames an entry inline, `✕`
+deletes it. Clicking a different state mid-animation blends onward from wherever the
+transition currently is, rather than restarting.
 
 Persistence is layered so the feature works whether or not a server is present:
 

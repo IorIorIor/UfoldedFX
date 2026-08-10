@@ -16,21 +16,25 @@
   html, body { height: 100%; overflow: hidden; background: #14081f; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; overscroll-behavior: none; touch-action: manipulation; -webkit-user-select: none; user-select: none; }
   #glcanvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
 
-  #panel {
-    position: fixed; top: 232px; right: 12px; bottom: 12px;
-    width: 300px; overflow-y: auto;
-    background: var(--panel-bg);
-    border: 1px solid var(--panel-border);
-    border-radius: 12px;
-    padding: 14px;
-    color: var(--text);
-    backdrop-filter: blur(8px);
-    scrollbar-width: thin;
-    transition: transform 0.25s ease;
+  /* everything lives in one unstyled right-side column, floating directly
+     over the shader with a text-shadow for legibility — no panel box */
+  #quickPanel {
+    position: fixed; top: 16px; right: 12px; bottom: 12px; z-index: 5;
+    width: 230px; color: var(--text);
+    display: flex; flex-direction: column;
   }
-  #panel.hidden { transform: translateX(330px); }
+  #quickPanel .ctl label, #quickPanel .ctl .val,
+  #quickPanel summary, #quickPanel .sub {
+    text-shadow: 0 1px 4px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.7);
+  }
 
-  details { margin-bottom: 8px; border: 1px solid var(--panel-border); border-radius: 8px; padding: 6px 8px; }
+  #moreSettings {
+    display: none; margin-top: 10px; overflow-y: auto; overflow-x: hidden;
+    scrollbar-width: thin; padding-right: 2px; flex: 1 1 auto; min-height: 0;
+  }
+  #moreSettings.open { display: block; }
+
+  details { margin-bottom: 10px; }
   details summary { cursor: pointer; font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text); padding: 4px 0; user-select: none; }
   details summary:hover { color: var(--accent); }
 
@@ -50,19 +54,17 @@
   }
   input.hex:focus { outline: none; border-color: var(--accent); }
 
-  #savedList {
-    display: none; margin: 0 0 10px; border: 1px solid var(--panel-border);
-    border-radius: 8px; overflow: hidden;
-  }
+  #savedList { display: none; margin: 0 0 10px; }
   #savedList.open { display: block; }
   .savedRow {
-    display: flex; align-items: center; gap: 6px; padding: 7px 8px;
-    border-bottom: 1px solid var(--panel-border);
+    display: flex; align-items: center; gap: 6px; padding: 5px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.12);
   }
   .savedRow:last-child { border-bottom: none; }
   .savedRow .name {
     flex: 1; font-size: 11px; color: var(--text); cursor: pointer;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.7);
   }
   .savedRow .name:hover { color: var(--accent); }
   .savedRow input.renameInput {
@@ -70,15 +72,7 @@
     border: 1px solid var(--accent); border-radius: 4px; padding: 3px 6px; min-width: 0;
   }
   .savedRow button { flex: none; width: auto; padding: 3px 8px; font-size: 10px; }
-  #savedList .empty { padding: 10px 8px; font-size: 10px; color: var(--text-dim); }
-
-  #quickPanel {
-    position: fixed; top: 16px; right: 12px; z-index: 5;
-    width: 230px; color: var(--text);
-  }
-  #quickBar .ctl label, #quickBar .ctl .val {
-    text-shadow: 0 1px 4px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.7);
-  }
+  #savedList .empty { padding: 6px 0; font-size: 10px; color: var(--text-dim); text-shadow: 0 1px 4px rgba(0,0,0,0.9); }
 
   .btnrow { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
   button {
@@ -89,14 +83,13 @@
   button:hover { background: rgba(255, 77, 109, 0.25); border-color: var(--accent); }
 
   #toggleUI {
-    display: block; width: 100%; margin-top: 10px;
+    display: block; width: 100%; margin-top: 10px; flex: none;
+    background: var(--panel-bg); backdrop-filter: blur(8px);
   }
   #toggleUI.on { background: rgba(255, 77, 109, 0.35); border-color: var(--accent); }
   #err { position: fixed; left: 12px; bottom: 12px; color: #ff8080; font-size: 11px; white-space: pre-wrap; max-width: 60vw; }
 
-  /* phone / Android WebView layout: panel becomes a bottom sheet */
   @media (max-width: 640px) {
-    #panel { top: auto; left: 12px; right: 12px; bottom: 12px; width: auto; max-height: 55%; }
     #quickPanel { width: min(70vw, 260px); }
     input[type=range] { height: 28px; }
     input[type=range]::-webkit-slider-thumb { width: 16px; height: 16px; margin-top: -6.5px; }
@@ -109,18 +102,18 @@
 <div id="quickPanel">
   <div id="quickBar"></div>
   <button id="toggleUI" title="Show more controls">All Settings</button>
-</div>
-<div id="panel" class="hidden">
-  <div class="btnrow">
-    <button id="pause">Pause</button>
-    <button id="savepng">Save PNG</button>
+  <div id="moreSettings">
+    <div class="btnrow">
+      <button id="pause">Pause</button>
+      <button id="savepng">Save PNG</button>
+    </div>
+    <div class="btnrow">
+      <button id="saveSettings">Save State</button>
+      <button id="toggleSaved">States (0) ▾</button>
+    </div>
+    <div id="savedList"></div>
+    <div id="groups"></div>
   </div>
-  <div class="btnrow">
-    <button id="saveSettings">Save Settings</button>
-    <button id="toggleSaved">Saved (0) ▾</button>
-  </div>
-  <div id="savedList"></div>
-  <div id="groups"></div>
 </div>
 <div id="err"></div>
 
@@ -131,7 +124,7 @@
 // [key, label, min, max, step, default]
 const GROUPS = [
   ['Heart Shape', [
-    ['scale',      'size',        0.2,  2.5,  0.01, 0.91],
+    ['scale',      'size',        0.2,  5.0,  0.01, 0.91],
     ['posX',       'center x',   -1.0,  1.0,  0.01, 0.0],
     ['posY',       'center y',   -1.0,  1.0,  0.01, 0.0],
     ['stretchX',   'width',       0.4,  2.0,  0.01, 1.0],
@@ -582,6 +575,16 @@ function hexToRgb(hex){
   const v = parseInt(hex.slice(1), 16);
   return [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255];
 }
+function rgbToHex(rgb){
+  return '#' + rgb.map(v => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, '0')).join('');
+}
+function lerpHex(a, b, t){
+  const ra = hexToRgb(a), rb = hexToRgb(b);
+  return rgbToHex([ra[0] + (rb[0] - ra[0]) * t, ra[1] + (rb[1] - ra[1]) * t, ra[2] + (rb[2] - ra[2]) * t]);
+}
+function easeInOutCubic(t){
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
 
 const groupsEl = document.getElementById('groups');
 const quickBar = document.getElementById('quickBar');
@@ -812,10 +815,11 @@ function setParam(key, v){
 }
 function applyValues(obj){ for (const k in obj) setParam(k, obj[k]); }
 
-// ------------------------------------------------------- saved settings
-// Synced to the Railway-hosted /api/presets endpoint when the app is
-// served by server.js; falls back to localStorage when run from file://
-// or when the server is unreachable, so saving still works standalone.
+// ------------------------------------------------------- saved states
+// Each saved state is a full snapshot (every slider + the gradient) that
+// can be animated to later. Synced to the Railway-hosted /api/presets
+// endpoint when the app is served by server.js; falls back to
+// localStorage when run from file:// or when the server is unreachable.
 const PRESETS_KEY = 'auraHeartPresets';
 let savedPresets = [];
 
@@ -855,30 +859,83 @@ async function persistPresets(list){
 const savedListEl = document.getElementById('savedList');
 const toggleSavedBtn = document.getElementById('toggleSaved');
 
-function loadPreset(p){
-  if (p.state) for (const k in p.state) setParam(k, p.state[k]);
-  if (Array.isArray(p.gradStops) && p.gradStops.length >= 2){
-    gradStops = p.gradStops.map(s => ({ ...s }));
-    selStop = Math.min(selStop, gradStops.length - 1);
-    bakeGradient();
+// Smoothly tweens every slider and color from the current live state to a
+// saved state's snapshot — sliders visibly slide, the gradient crossfades.
+// A token counter cancels any in-flight tween the moment a new one starts,
+// so clicking a different state mid-animation blends from wherever it was.
+let tweenToken = 0;
+
+function animateToState(p, duration = 1400){
+  const myToken = ++tweenToken;
+  const fromState = { ...state };
+  const toStateSrc = p.state || {};
+  const numericKeys = [], hexKeys = [];
+  for (const k in fromState){
+    if (!(k in toStateSrc)) continue;
+    if (typeof fromState[k] === 'number' && typeof toStateSrc[k] === 'number') numericKeys.push(k);
+    else if (typeof fromState[k] === 'string' && typeof toStateSrc[k] === 'string') hexKeys.push(k);
+  }
+
+  // pad the shorter gradient to match stop counts so indices line up,
+  // then rebuild the handle DOM once up front (cheap per-frame after that)
+  const hasGrad = Array.isArray(p.gradStops) && p.gradStops.length >= 2;
+  let fromPad, toPad, finalStops;
+  if (hasGrad){
+    finalStops = p.gradStops.map(s => ({ ...s }));
+    const n = Math.max(gradStops.length, finalStops.length);
+    fromPad = gradStops.map(s => ({ ...s }));
+    while (fromPad.length < n) fromPad.push({ ...fromPad[fromPad.length - 1] });
+    toPad = finalStops.map(s => ({ ...s }));
+    while (toPad.length < n) toPad.push({ ...toPad[toPad.length - 1] });
+    gradStops = fromPad.map(s => ({ ...s }));
     updateGradUI();
   }
+
+  const start = performance.now();
+  function frame(now){
+    if (myToken !== tweenToken) return; // superseded by a newer tween
+    const t = Math.min(1, (now - start) / duration);
+    const e = easeInOutCubic(t);
+
+    for (const k of numericKeys) setParam(k, fromState[k] + (toStateSrc[k] - fromState[k]) * e);
+    for (const k of hexKeys) setParam(k, lerpHex(fromState[k], toStateSrc[k], e));
+
+    if (hasGrad){
+      gradStops = fromPad.map((s, i) => ({
+        p: s.p + (toPad[i].p - s.p) * e,
+        c: lerpHex(s.c, toPad[i].c, e),
+      }));
+      bakeGradient();
+      const handles = document.getElementById('gradHandles').children;
+      gradStops.forEach((s, i) => { if (handles[i]) styleHandle(handles[i], i); });
+    }
+
+    if (t < 1){
+      requestAnimationFrame(frame);
+    } else if (hasGrad){
+      gradStops = finalStops; // drop the padding duplicates now that we've landed
+      selStop = Math.min(selStop, gradStops.length - 1);
+      bakeGradient();
+      updateGradUI();
+    }
+  }
+  requestAnimationFrame(frame);
 }
 
 function renderSavedList(){
-  toggleSavedBtn.textContent = `Saved (${savedPresets.length}) ▾`;
+  toggleSavedBtn.textContent = `States (${savedPresets.length}) ▾`;
   savedListEl.innerHTML = '';
   if (!savedPresets.length){
-    savedListEl.innerHTML = '<div class="empty">No saved settings yet</div>';
+    savedListEl.innerHTML = '<div class="empty">No saved states yet</div>';
     return;
   }
   for (const p of savedPresets){
     const row = document.createElement('div');
     row.className = 'savedRow';
-    row.innerHTML = `<span class="name" title="Click to load">${escapeHtml(p.name)}</span>
+    row.innerHTML = `<span class="name" title="Click to animate to this state">${escapeHtml(p.name)}</span>
       <button class="renameBtn" title="Rename">✎</button>
       <button class="delBtn" title="Delete">✕</button>`;
-    row.querySelector('.name').addEventListener('click', () => loadPreset(p));
+    row.querySelector('.name').addEventListener('click', () => animateToState(p));
     row.querySelector('.renameBtn').addEventListener('click', e => {
       e.stopPropagation();
       const nameEl = row.querySelector('.name');
@@ -910,7 +967,7 @@ function renderSavedList(){
 document.getElementById('saveSettings').onclick = async () => {
   const preset = {
     id: (crypto.randomUUID ? crypto.randomUUID() : 'p' + Date.now() + Math.random().toString(16).slice(2)),
-    name: `Setting ${savedPresets.length + 1}`,
+    name: `State ${savedPresets.length + 1}`,
     state: { ...state },
     gradStops: gradStops.map(s => ({ ...s })),
   };
@@ -939,10 +996,10 @@ document.getElementById('savepng').onclick = () => {
   a.click();
 };
 
-const panel = document.getElementById('panel');
+const moreSettings = document.getElementById('moreSettings');
 const toggle = document.getElementById('toggleUI');
 toggle.onclick = () => {
-  const on = !panel.classList.toggle('hidden');
+  const on = moreSettings.classList.toggle('open');
   toggle.classList.toggle('on', on);
   toggle.title = on ? 'Hide more controls' : 'Show more controls';
 };
