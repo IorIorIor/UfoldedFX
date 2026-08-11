@@ -60,6 +60,15 @@ boxed panel):
 
 ## Saved States
 
+The app ships with eight built-in states (TEXT MESSAGE, IDLE, MEDIA MESSAGE, NEW REVEAL and
+the four ORACLE screens). They are seeded on first run in any browser or WebView; once you
+have saved states of your own (server or `localStorage`), those take over and the built-ins
+never overwrite them.
+
+The whole UI is hidden on load so the page runs as a clean fullscreen visual — **press `Q`**
+to reveal the controls and `Q` again to hide them. (The key is ignored while typing in a
+text field, so hex and rename inputs still accept the letter q.)
+
 `Save State` snapshots every slider, the gradient, and the glow color into a named entry
 in the `States (N) ▾` dropdown. Click an entry's name and the whole scene animates there
 over about 1.4s — every slider eases to its new value and the gradient crossfades to the
