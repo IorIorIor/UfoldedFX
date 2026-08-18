@@ -55,6 +55,35 @@
   }
   input.hex:focus { outline: none; border-color: var(--accent); }
 
+  select.sel {
+    font-family: inherit; font-size: 10px; color: var(--text);
+    background: rgba(0,0,0,0.5); border: 1px solid var(--panel-border);
+    border-radius: 4px; padding: 3px 4px; width: 100%;
+  }
+  select.sel:focus { outline: none; border-color: var(--accent); }
+  .keyRow {
+    display: grid; grid-template-columns: 1fr 40px 64px 14px; gap: 4px;
+    align-items: center; margin: 5px 0;
+  }
+  .keyRow input.num {
+    font-family: inherit; font-size: 10px; color: var(--text); text-align: right;
+    background: rgba(0,0,0,0.5); border: 1px solid var(--panel-border);
+    border-radius: 4px; padding: 3px 4px; width: 100%;
+  }
+  .keyRow input.num:focus { outline: none; border-color: var(--accent); }
+  .keyRow .kill {
+    background: none; border: none; color: var(--text-dim); cursor: pointer;
+    font-size: 12px; padding: 0; width: 16px; flex: none;
+  }
+  .keyRow .kill:hover { color: var(--accent); background: none; }
+  .keyHead {
+    display: grid; grid-template-columns: 1fr 40px 64px 14px; gap: 4px;
+    font-size: 9px; color: var(--text-dim); letter-spacing: 1px;
+    text-transform: uppercase; margin-top: 4px;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.9);
+  }
+  #expStatus { margin-top: 6px; min-height: 12px; }
+
   #statesIO {
     display: none; width: 100%; height: 110px; margin: 6px 0; resize: vertical;
     font: 10px/1.4 ui-monospace, Menlo, Consolas, monospace; color: var(--text);
@@ -128,6 +157,31 @@
     <textarea id="statesIO" spellcheck="false"></textarea>
     <div id="savedList"></div>
     <div id="groups"></div>
+    <details id="videoDet">
+      <summary>Video Export</summary>
+      <div id="timelineRows"></div>
+      <div class="btnrow">
+        <button id="addKey">+ Keyframe</button>
+      </div>
+      <div class="ctl">
+        <label>size</label>
+        <select id="expSize" class="sel"></select>
+        <span class="val" id="expDur">0.0s</span>
+      </div>
+      <div class="ctl">
+        <label>fps</label>
+        <select id="expFps" class="sel">
+          <option value="60" selected>60</option>
+          <option value="30">30</option>
+        </select>
+        <span class="val"></span>
+      </div>
+      <div class="btnrow">
+        <button id="previewTimeline">Preview</button>
+        <button id="exportVideo">Export</button>
+      </div>
+      <div class="sub" id="expStatus"></div>
+    </details>
   </div>
 </div>
 <div id="err"></div>
@@ -142,8 +196,8 @@ const GROUPS = [
     ['scale',      'size',        0.2,  5.0,  0.01, 0.91],
     ['posX',       'center x',   -1.0,  1.0,  0.01, 0.0],
     ['posY',       'center y',   -1.0,  1.0,  0.01, 0.0],
-    ['stretchX',   'width',       0.4,  2.0,  0.01, 1.0],
-    ['stretchY',   'height',      0.4,  2.0,  0.01, 1.0],
+    ['stretchX',   'width',       0.0,  2.0,  0.01, 1.0],
+    ['stretchY',   'height',      0.0,  2.0,  0.01, 1.0],
     ['rot',        'rotation°', -180,  180,   1,    0],
     ['round',      'roundness',   0.0,  1.0,  0.01, 0.0],
     ['shapeMix',   'svg↔classic', 0.0,  1.0,  0.01, 0.0],
@@ -506,8 +560,10 @@ vec3 heartColor(vec2 uv){
 
   float sc = u_scale * (1.0 + u_pulseAmt * pulse());
   p /= sc;
-  p.x /= u_stretchX;
-  p.y /= u_stretchY;
+  // guarded so width/height can reach 0 — the heart collapses to a sliver
+  // rather than dividing by zero and producing NaN pixels
+  p.x /= max(u_stretchX, 0.0004);
+  p.y /= max(u_stretchY, 0.0004);
   p.y += 0.5; // heart occupies y in [0,1] in SDF space
 
   float d = heartSDF(p);
@@ -1276,7 +1332,13 @@ window.addEventListener('keydown', e => {
 });
 
 // ---------------------------------------------------------------- render loop
+// While exporting, the canvas is held at the chosen output resolution and
+// the clock is driven by fixed timesteps, so rendering is deterministic and
+// independent of window size or how fast frames actually complete.
+let exportMode = false, exportTime = 0;
+
 function resize(){
+  if (exportMode) return;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const w = Math.floor(innerWidth * dpr), h = Math.floor(innerHeight * dpr);
   if (canvas.width !== w || canvas.height !== h){
@@ -1300,11 +1362,11 @@ let lastTick = performance.now();
 
 function wrapAngle(a){ return Math.atan2(Math.sin(a), Math.cos(a)); }
 
-function advancePhases(){
+function advancePhases(dtFixed){
   const now = performance.now();
-  const dt = Math.min((now - lastTick) / 1000, 0.1);
+  const dt = (dtFixed !== undefined) ? dtFixed : Math.min((now - lastTick) / 1000, 0.1);
   lastTick = now;
-  if (paused) return;
+  if (paused && dtFixed === undefined) return;
   pulsePhase = (pulsePhase + state.pulseSpeed * dt) % 1000;
   driftPhase = (driftPhase + state.drift * dt) % 1000;
   spinPhase += state.spin * dt;
@@ -1319,7 +1381,8 @@ function advancePhases(){
 function drawScene(overrides){
   resize();
   if (state.soft !== bakedSoft) bakeGradient();
-  const t = (paused ? timeAcc : timeAcc + (performance.now() - t0) / 1000) % 3600;
+  const t = exportMode ? exportTime
+    : (paused ? timeAcc : timeAcc + (performance.now() - t0) / 1000) % 3600;
   gl.uniform2f(u('u_res'), canvas.width, canvas.height);
   gl.uniform1f(u('u_time'), t);
   gl.uniform1f(u('u_pulsePhase'), pulsePhase);
@@ -1341,9 +1404,327 @@ function drawScene(overrides){
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 
+// ------------------------------------------------ timeline / video export
+// A timeline is an ordered list of saved states; every entry after the first
+// carries the duration and easing of the transition INTO it. Rendering a
+// timeline frame is the same maths the live state tween uses (numeric lerp,
+// hex lerp, ramp-space gradient crossfade), just driven by an explicit time
+// instead of wall-clock, which is what makes deterministic export possible.
+const EASINGS = {
+  'linear':      t => t,
+  'ease in':     t => t * t * t,
+  'ease out':    t => 1 - Math.pow(1 - t, 3),
+  'ease in-out': easeInOutCubic,
+  'smooth':      t => t * t * (3 - 2 * t),
+  'snap':        t => 1 - Math.pow(1 - t, 6),
+  'cut':         t => (t < 1 ? 0 : 1),
+};
+const EXPORT_SIZES = [
+  ['window',      null],
+  ['1080 × 1920', [1080, 1920]],
+  ['1920 × 1080', [1920, 1080]],
+  ['1080 × 1080', [1080, 1080]],
+  ['720 × 1280',  [720, 1280]],
+];
+
+let timeline = [];
+let previewToken = 0;
+let busy = false;
+
+const timelineRowsEl = document.getElementById('timelineRows');
+const expStatusEl = document.getElementById('expStatus');
+const expDurEl = document.getElementById('expDur');
+const expSizeEl = document.getElementById('expSize');
+const expFpsEl = document.getElementById('expFps');
+
+EXPORT_SIZES.forEach(([label], i) => {
+  const o = document.createElement('option');
+  o.value = String(i);
+  o.textContent = label;
+  expSizeEl.appendChild(o);
+});
+expSizeEl.value = '1';
+
+function presetByName(name){ return savedPresets.find(p => p.name === name); }
+function timelineDuration(){
+  return timeline.slice(1).reduce((a, k) => a + (+k.dur || 0), 0);
+}
+
+function seedTimeline(){
+  if (timeline.length || !savedPresets.length) return;
+  timeline = [{ name: savedPresets[0].name, dur: 0, ease: 'ease in-out' }];
+  if (savedPresets[1]) timeline.push({ name: savedPresets[1].name, dur: 2, ease: 'ease in-out' });
+}
+
+function renderTimeline(){
+  seedTimeline();
+  timelineRowsEl.innerHTML = '';
+  if (!savedPresets.length){
+    timelineRowsEl.innerHTML = '<div class="sub">save some states first</div>';
+    expDurEl.textContent = '0.0s';
+    return;
+  }
+  const head = document.createElement('div');
+  head.className = 'keyHead';
+  head.innerHTML = '<span>state</span><span>sec</span><span>easing</span><span></span>';
+  timelineRowsEl.appendChild(head);
+
+  timeline.forEach((k, i) => {
+    const row = document.createElement('div');
+    row.className = 'keyRow';
+
+    const sel = document.createElement('select');
+    sel.className = 'sel';
+    savedPresets.forEach(p => {
+      const o = document.createElement('option');
+      o.value = p.name; o.textContent = p.name;
+      if (p.name === k.name) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.addEventListener('change', () => { k.name = sel.value; });
+    row.appendChild(sel);
+
+    const dur = document.createElement('input');
+    dur.className = 'num'; dur.type = 'number';
+    dur.min = '0'; dur.step = '0.1'; dur.value = String(k.dur);
+    dur.disabled = i === 0;
+    dur.addEventListener('input', () => {
+      k.dur = Math.max(0, +dur.value || 0);
+      expDurEl.textContent = timelineDuration().toFixed(1) + 's';
+    });
+    row.appendChild(dur);
+
+    const ease = document.createElement('select');
+    ease.className = 'sel';
+    Object.keys(EASINGS).forEach(name => {
+      const o = document.createElement('option');
+      o.value = name; o.textContent = name;
+      if (name === k.ease) o.selected = true;
+      ease.appendChild(o);
+    });
+    ease.disabled = i === 0;
+    ease.addEventListener('change', () => { k.ease = ease.value; });
+    row.appendChild(ease);
+
+    const kill = document.createElement('button');
+    kill.className = 'kill'; kill.textContent = '✕'; kill.title = 'Remove';
+    kill.addEventListener('click', () => {
+      timeline.splice(i, 1);
+      renderTimeline();
+    });
+    row.appendChild(kill);
+
+    timelineRowsEl.appendChild(row);
+  });
+  expDurEl.textContent = timelineDuration().toFixed(1) + 's';
+}
+
+document.getElementById('addKey').onclick = () => {
+  if (!savedPresets.length) return;
+  const last = timeline[timeline.length - 1];
+  timeline.push({
+    name: (last && last.name) || savedPresets[0].name,
+    dur: 2,
+    ease: 'ease in-out',
+  });
+  renderTimeline();
+};
+
+// paint the scene exactly as it should look `time` seconds into the timeline
+function applyTimelineAt(time){
+  if (!timeline.length) return;
+  let idx = 0, local = 0, acc = 0;
+  for (let i = 1; i < timeline.length; i++){
+    const d = +timeline[i].dur || 0;
+    if (time <= acc + d || i === timeline.length - 1){
+      idx = i;
+      local = d > 0 ? Math.min(1, Math.max(0, (time - acc) / d)) : 1;
+      break;
+    }
+    acc += d;
+  }
+  const A = presetByName(timeline[Math.max(0, idx - 1)].name);
+  const B = presetByName(timeline[idx].name);
+  if (!A || !B) return;
+  const ease = EASINGS[timeline[idx].ease] || EASINGS['ease in-out'];
+  const e = timeline.length === 1 ? 1 : ease(local);
+
+  for (const k in B.state){
+    if (!(k in A.state)) continue;
+    const a = A.state[k], b = B.state[k];
+    if (typeof a === 'number' && typeof b === 'number') state[k] = a + (b - a) * e;
+    else if (typeof a === 'string' && typeof b === 'string') state[k] = lerpHex(a, b, e);
+  }
+
+  const sa = A.gradStops, sb = B.gradStops;
+  if (Array.isArray(sa) && Array.isArray(sb) && sa.length >= 2 && sb.length >= 2){
+    const ra = computeRamp(sa, state.soft), rb = computeRamp(sb, state.soft);
+    const blended = new Uint8ClampedArray(ra.length);
+    for (let i = 0; i < blended.length; i++) blended[i] = ra[i] + (rb[i] - ra[i]) * e;
+    uploadRamp(blended);
+    bakedSoft = state.soft;   // stop drawScene re-baking over the blend
+    const ga = [sa[sa.length - 2].p, sa[sa.length - 1].p];
+    const gb = [sb[sb.length - 2].p, sb[sb.length - 1].p];
+    glowOverride = [ga[0] + (gb[0] - ga[0]) * e, ga[1] + (gb[1] - ga[1]) * e];
+  }
+}
+
+function snapshotLive(){
+  return { state: { ...state }, stops: gradStops.map(s => ({ ...s })) };
+}
+function restoreLive(snap){
+  for (const k in snap.state) setParam(k, snap.state[k]);
+  gradStops = snap.stops;
+  selStop = Math.min(selStop, gradStops.length - 1);
+  glowOverride = null;
+  bakeGradient();
+  updateGradUI();
+}
+
+const nextFrame = () => new Promise(r => requestAnimationFrame(r));
+
+document.getElementById('previewTimeline').onclick = async () => {
+  if (busy) return;
+  const total = timelineDuration();
+  if (!total){ expStatusEl.textContent = 'set a duration first'; return; }
+  busy = true;
+  const myToken = ++previewToken;
+  tweenToken++;                       // cancel any state tween in flight
+  const start = performance.now();
+  expStatusEl.textContent = 'previewing…';
+  while (myToken === previewToken){
+    const t = (performance.now() - start) / 1000;
+    applyTimelineAt(Math.min(t, total));
+    if (t >= total) break;
+    await nextFrame();
+  }
+  // reflect the landed values in the sliders
+  for (const k in state) setParam(k, state[k]);
+  expStatusEl.textContent = '';
+  busy = false;
+};
+
+function pickMime(){
+  const cands = [
+    'video/mp4;codecs=avc1.42E01E',
+    'video/mp4',
+    'video/webm;codecs=vp9',
+    'video/webm;codecs=vp8',
+    'video/webm',
+  ];
+  for (const m of cands){
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m;
+  }
+  return '';
+}
+
+document.getElementById('exportVideo').onclick = async () => {
+  if (busy) return;
+  const total = timelineDuration();
+  if (!total){ expStatusEl.textContent = 'set a duration first'; return; }
+  if (!window.MediaRecorder || !canvas.captureStream){
+    expStatusEl.textContent = 'recording not supported in this browser';
+    return;
+  }
+  const mime = pickMime();
+  if (!mime){ expStatusEl.textContent = 'no supported video codec'; return; }
+
+  busy = true;
+  previewToken++;                     // stop any preview
+  tweenToken++;
+  const snap = snapshotLive();
+  const savedPhases = [pulsePhase, spinPhase, huePhase, driftPhase];
+  const fps = +expFpsEl.value || 60;
+  const dims = EXPORT_SIZES[+expSizeEl.value][1];
+  const oldW = canvas.width, oldH = canvas.height;
+  const oldVid = document.getElementById('expVideo');
+  if (oldVid) oldVid.remove();
+
+  exportMode = true;
+  if (dims){
+    canvas.width = dims[0]; canvas.height = dims[1];
+    gl.viewport(0, 0, canvas.width, canvas.height);
+  }
+  pulsePhase = spinPhase = huePhase = driftPhase = 0;
+
+  const stream = canvas.captureStream(0);
+  const track = stream.getVideoTracks()[0];
+  const bitrate = Math.min(40e6, Math.round(canvas.width * canvas.height * fps * 0.15));
+  const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: bitrate });
+  const chunks = [];
+  rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+  const stopped = new Promise(r => { rec.onstop = r; });
+
+  try {
+    rec.start();
+    const frames = Math.max(1, Math.round(total * fps));
+    const tStart = performance.now();
+    for (let f = 0; f < frames; f++){
+      // pace to real time: MediaRecorder timestamps frames by wall clock, so
+      // rendering ahead of schedule would compress the finished video
+      const due = tStart + (f * 1000) / fps;
+      while (performance.now() < due - 1) await nextFrame();
+      exportTime = f / fps;
+      applyTimelineAt(f / fps);
+      advancePhases(1 / fps);
+      drawScene();
+      if (track.requestFrame) track.requestFrame();
+      if ((f & 15) === 0){
+        expStatusEl.textContent = `rendering ${Math.round((f / frames) * 100)}%`;
+      }
+    }
+    await new Promise(r => setTimeout(r, 250));   // let the last frame encode
+    rec.stop();
+    await stopped;
+  } catch (err){
+    expStatusEl.textContent = 'export failed: ' + err.message;
+  } finally {
+    exportMode = false;
+    canvas.width = oldW; canvas.height = oldH;
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    [pulsePhase, spinPhase, huePhase, driftPhase] = savedPhases;
+    lastTick = performance.now();
+    restoreLive(snap);
+    resize();
+  }
+
+  if (!chunks.length){ busy = false; return; }
+  const blob = new Blob(chunks, { type: mime });
+  const url = URL.createObjectURL(blob);
+  const ext = mime.indexOf('mp4') >= 0 ? 'mp4' : 'webm';
+
+  // Offer the file two ways: a normal download, plus an inline player, because
+  // sandboxed hosts (e.g. the published artifact) block script-started
+  // downloads — there you can still save it from the player's controls.
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'heartfx-' + Date.now() + '.' + ext;
+  a.click();
+
+  const vid = document.createElement('video');
+  vid.id = 'expVideo';
+  vid.src = url;
+  vid.controls = true;
+  vid.loop = true;
+  vid.style.cssText = 'width:100%; margin-top:6px; border-radius:6px; display:block;';
+  expStatusEl.after(vid);
+  const size = blob.size >= 1048576
+    ? (blob.size / 1048576).toFixed(1) + ' MB'
+    : Math.round(blob.size / 1024) + ' KB';
+  expStatusEl.textContent = `done — ${size} ${ext}, ${total.toFixed(1)}s @ ${fps}fps`;
+  busy = false;
+};
+
+// keep the timeline's state dropdowns in sync whenever the states list changes
+const baseRenderSavedList = renderSavedList;
+renderSavedList = function(){ baseRenderSavedList(); renderTimeline(); };
+renderTimeline();
+
 function frame(){
-  advancePhases();
-  drawScene();
+  if (!exportMode){
+    advancePhases();
+    drawScene();
+  }
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

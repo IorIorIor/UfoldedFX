@@ -28,7 +28,8 @@ the controls directly underneath, in that same unstyled floating layout (no sepa
 boxed panel):
 
 - **Heart Shape**: size (up to 5x — the heart can grow well past the frame), position,
-  width/height stretch, rotation, roundness, and an
+  width/height stretch (either can go all the way to 0, squeezing the heart proportionally
+  down to nothing — useful as a collapse/reveal endpoint), rotation, roundness, and an
   `svg↔classic` blend. The default silhouette is a signed-distance field baked at startup
   from a polygon sampled off the reference heart SVG (embedded in the file — still zero
   external requests); `classic` is an analytic heart SDF.
@@ -83,6 +84,23 @@ Persistence is layered so the feature works whether or not a server is present:
   that opens the app.
 - If there's no server (opened via `file://`, or the request fails), saves fall back to
   the browser's `localStorage` — still fully functional, just local to that browser.
+
+## Video Export
+
+The **Video Export** section builds a timeline: pick saved states in order, and give every
+entry after the first a duration (seconds) and an easing for the transition into it —
+`linear`, `ease in`, `ease out`, `ease in-out`, `smooth`, `snap` or `cut` (a hard switch).
+`Preview` plays the whole sequence live so durations and easings can be judged before
+committing; `Export` records it.
+
+Export renders at a fixed timestep at the chosen size (window, 1080×1920, 1920×1080,
+1080×1080 or 720×1280) and frame rate (60 or 30 fps), independent of the window, and
+records via `MediaRecorder` — H.264 MP4 where the browser supports it, otherwise WebM.
+Frames are paced to real time because `MediaRecorder` timestamps by wall clock, so an
+export takes about as long as the clip it produces. The finished file downloads
+automatically **and** appears in an inline player below the button — sandboxed hosts (the
+published artifact) block script-started downloads, so there you can save it from the
+player's own controls instead. Exporting leaves the live look untouched.
 
 ## Deploying to Railway
 

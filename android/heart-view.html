@@ -800,8 +800,10 @@ vec3 heartColor(vec2 uv){
 
   float sc = u_scale * (1.0 + u_pulseAmt * pulse());
   p /= sc;
-  p.x /= u_stretchX;
-  p.y /= u_stretchY;
+  // guarded so width/height can reach 0 — the heart collapses to a sliver
+  // rather than dividing by zero and producing NaN pixels
+  p.x /= max(u_stretchX, 0.0004);
+  p.y /= max(u_stretchY, 0.0004);
   p.y += 0.5; // heart occupies y in [0,1] in SDF space
 
   float d = heartSDF(p);
