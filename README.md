@@ -97,10 +97,13 @@ Export renders at a fixed timestep at the chosen size (window, 1080×1920, 1920�
 1080×1080 or 720×1280) and frame rate (60 or 30 fps), independent of the window, and
 records via `MediaRecorder` — H.264 MP4 where the browser supports it, otherwise WebM.
 Frames are paced to real time because `MediaRecorder` timestamps by wall clock, so an
-export takes about as long as the clip it produces. The finished file downloads
-automatically **and** appears in an inline player below the button — sandboxed hosts (the
-published artifact) block script-started downloads, so there you can save it from the
-player's own controls instead. Exporting leaves the live look untouched.
+export takes about as long as the clip it produces.
+
+The finished file is saved through the artifact host's download capability when the page runs
+as a published artifact (a confirmation appears; files over 16 MB are refused there), and
+through an ordinary browser download everywhere else. Either way it also appears in an
+inline player below the button, so a long clip that is too large to hand over can still be
+saved from the player's own controls. Exporting leaves the live look untouched.
 
 ## Deploying to Railway
 

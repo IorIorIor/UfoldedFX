@@ -1693,13 +1693,36 @@ document.getElementById('exportVideo').onclick = async () => {
   const url = URL.createObjectURL(blob);
   const ext = mime.indexOf('mp4') >= 0 ? 'mp4' : 'webm';
 
-  // Offer the file two ways: a normal download, plus an inline player, because
-  // sandboxed hosts (e.g. the published artifact) block script-started
-  // downloads — there you can still save it from the player's controls.
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'heartfx-' + Date.now() + '.' + ext;
-  a.click();
+  const filename = 'heartfx-' + Date.now() + '.' + ext;
+  let saveNote = '';
+
+  // On the published artifact the page can only hand over a file through the
+  // downloads capability (script-started downloads are inert there); anywhere
+  // else — local file, Railway — the plain anchor download is the right path.
+  let dl = null;
+  try {
+    if (typeof claude !== 'undefined' && claude && typeof claude.use === 'function'){
+      dl = await claude.use('downloads');
+    }
+  } catch (e) { dl = null; }
+
+  if (dl){
+    try {
+      await dl.save({ filename, data: blob });
+      saveNote = ' · saved';
+    } catch (err){
+      const code = (err && err.code) || 'unavailable';
+      saveNote = code === 'declined' ? ' · save cancelled'
+        : code === 'too_large' ? ' · too big to save (16 MB cap) — use the player below'
+        : ' · save unavailable — use the player below';
+    }
+  } else {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    saveNote = ' · downloaded';
+  }
 
   const vid = document.createElement('video');
   vid.id = 'expVideo';
@@ -1711,7 +1734,8 @@ document.getElementById('exportVideo').onclick = async () => {
   const size = blob.size >= 1048576
     ? (blob.size / 1048576).toFixed(1) + ' MB'
     : Math.round(blob.size / 1024) + ' KB';
-  expStatusEl.textContent = `done — ${size} ${ext}, ${total.toFixed(1)}s @ ${fps}fps`;
+  expStatusEl.textContent =
+    `${size} ${ext}, ${total.toFixed(1)}s @ ${fps}fps${saveNote}`;
   busy = false;
 };
 
